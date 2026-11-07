@@ -1,0 +1,24 @@
+# Private configuration and runtime data
+.env
+.env.*
+*.pem
+*.key
+.ui_anchors.json
+.bot-health.json
+*.log
+*.pid
+*.db
+*.sqlite*
+# Local tools and generated files
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+.vscode/
+*.bat
+migrations/
+alembic.ini
+graphify-out/
+~$*

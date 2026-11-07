@@ -1,0 +1,110 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="30.0.0">
+  <diagram name="ДВИ" id="spy-usecases">
+    <mxGraphModel page="1" pageScale="1" pageWidth="794" pageHeight="1123" grid="0" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user" value="Пользователь" style="shape=umlActor;html=1;verticalLabelPosition=bottom;verticalAlign=top;labelWidth=150;outlineConnect=0;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="65" y="310" width="35" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="admin" value="Администратор" style="shape=umlActor;html=1;verticalLabelPosition=bottom;verticalAlign=top;labelWidth=150;outlineConnect=0;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="65" y="870" width="35" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="online" value="Играть онлайн" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="40" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-online" source="user" target="online" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="local" value="Проводить игру&#10;на одном устройстве" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="140" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-local" source="user" target="local" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="packs" value="Просматривать&#10;доступные наборы" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="240" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-packs" source="user" target="packs" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="own" value="Создавать и изменять&#10;свои наборы слов" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="340" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-own" source="user" target="own" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="history" value="Просматривать&#10;историю своих игр" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="440" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-history" source="user" target="history" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="profile" value="Просматривать свой&#10;профиль и рейтинг" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="540" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-profile" source="user" target="profile" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="settings" value="Настраивать оформление&#10;и часовой пояс" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="640" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="user-settings" source="user" target="settings" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="create" value="Создать и настроить&#10;онлайн-комнату" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="565" y="10" width="210" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="create-extend" source="create" target="online" value="&amp;lt;&amp;lt;extend&amp;gt;&amp;gt;" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;dashed=1;dashPattern=3 3;endArrow=open;endSize=8;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="join" value="Присоединиться&#10;к комнате" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="565" y="100" width="210" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="join-extend" source="join" target="online" value="&amp;lt;&amp;lt;extend&amp;gt;&amp;gt;" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;dashed=1;dashPattern=3 3;endArrow=open;endSize=8;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="favorite" value="Добавить набор&#10;в избранное" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="565" y="240" width="210" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="favorite-extend" source="favorite" target="packs" value="&amp;lt;&amp;lt;extend&amp;gt;&amp;gt;" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;dashed=1;dashPattern=3 3;endArrow=open;endSize=8;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="publish" value="Опубликовать&#10;свой набор" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="565" y="340" width="210" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="publish-extend" source="publish" target="own" value="&amp;lt;&amp;lt;extend&amp;gt;&amp;gt;" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;dashed=1;dashPattern=3 3;endArrow=open;endSize=8;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="export" value="Экспортировать&#10;свой набор" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="565" y="430" width="210" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="export-extend" source="export" target="own" value="&amp;lt;&amp;lt;extend&amp;gt;&amp;gt;" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;dashed=1;dashPattern=3 3;endArrow=open;endSize=8;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="moderate" value="Управлять наборами&#10;пользователей" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="790" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="admin-moderate" source="admin" target="moderate" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="reports" value="Рассматривать жалобы&#10;на наборы" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="890" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="admin-reports" source="admin" target="reports" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ban" value="Блокировать и&#10;разблокировать игроков" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=17;fontColor=#000000;strokeColor=#000000;fillColor=#ffffff;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="230" y="990" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="admin-ban" source="admin" target="ban" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="admin-user" source="admin" target="user" value="" style="html=1;rounded=0;endArrow=none;fontFamily=Times New Roman;fontSize=15;fontColor=#000000;strokeColor=#000000;labelBackgroundColor=#ffffff;endArrow=block;endFill=0;endSize=10;exitX=0.5;exitY=0;entryX=0.5;entryY=1.6;entryPerimeter=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,31 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: spy_game
+      MYSQL_USER: spy
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h localhost -uroot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN}
+      ADMIN_ID: ${ADMIN_ID:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      PROXY_URL: ${PROXY_URL:-}
+      DATABASE_URL: mysql+pymysql://spy:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@db:3306/spy_game?charset=utf8mb4
+volumes:
+  mysql_data:
