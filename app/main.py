@@ -29,7 +29,7 @@ from app.bot.recovery import EditRecoveryMiddleware
 from app.bot.tracker import ScreenTracker
 from app.core.config import Settings, load_settings
 from app.core.console import start_console_control
-from app.database.info import check_connection, ensure_mysql, mask_url
+from app.database.info import check_connection, ensure_supported_database, mask_url
 from app.database.migrate import run_migrations
 from app.database.pack_repository import PackRepository
 from app.database.repository import LocalGameRepository
@@ -124,14 +124,14 @@ async def main() -> None:
     settings = load_settings()
     if settings.admin_id is None or settings.admin_id <= 0:
         logging.warning("ADMIN_ID is not configured: administrator actions are disabled")
-    ensure_mysql(settings.database_url)
+    ensure_supported_database(settings.database_url)
     logging.info("База данных: %s", mask_url(settings.database_url))
     try:
         await run_db(check_connection, settings.database_url)
     except Exception as err:
         raise SystemExit(
-            f"Не удалось подключиться к MySQL ({mask_url(settings.database_url)}): {err}\n"
-            "Проверьте, что служба MySQL запущена, а логин и пароль в DATABASE_URL верны."
+            f"Не удалось подключиться к базе ({mask_url(settings.database_url)}): {err}\n"
+            "Проверьте адрес MySQL и учётные данные или доступ к файлу SQLite."
         ) from err
     await run_db(run_migrations, settings.database_url)
     factory = await run_db(make_session_factory, settings.database_url)

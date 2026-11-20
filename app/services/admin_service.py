@@ -225,7 +225,7 @@ class AdminService:
             if pack is None:
                 raise AdminError("Набор с таким номером не найден")
             if pack.owner_id is None:
-                raise AdminError("Готовые наборы хранятся в базе данных и редактируются напрямую в MySQL")
+                raise AdminError("Встроенные наборы редактируются напрямую в базе данных")
             return self._pack_row(db, pack)
 
     def _moderator(self) -> PackService:

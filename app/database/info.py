@@ -5,13 +5,18 @@ from sqlalchemy.orm import sessionmaker
 from app.database.models import Base
 
 
-def ensure_mysql(url: str) -> None:
-    backend = make_url(url).get_backend_name()
-    if backend != "mysql":
+def ensure_supported_database(url: str) -> None:
+    parsed = make_url(url)
+    backend = parsed.get_backend_name()
+    if backend not in ("mysql", "sqlite"):
         raise RuntimeError(
-            f"Бот работает только с MySQL, а в DATABASE_URL указан «{backend}». "
-            "Пример: mysql+pymysql://spy:spy@localhost:3306/spy_game?charset=utf8mb4"
+            f"В DATABASE_URL указан «{backend}». Бот поддерживает MySQL и SQLite."
         )
+    if backend == "sqlite" and (
+        parsed.database in (None, "", ":memory:", "file::memory:")
+        or parsed.query.get("mode") == "memory"
+    ):
+        raise RuntimeError("Для SQLite укажите файл базы, например sqlite:///spy_game.sqlite3")
 
 
 def mask_url(url: str) -> str:
@@ -50,9 +55,13 @@ def describe(factory: sessionmaker, url: str) -> dict:
 
 
 def format_info(info: dict) -> str:
+    location = (
+        f"Файл: {info['database']}" if info["dialect"] == "sqlite"
+        else f"Сервер: {info['host']}:{info['port']}, схема {info['database']}"
+    )
     lines = [
         f"База данных: {info['dialect']} {info['version']}",
-        f"Сервер: {info['host']}:{info['port']}, схема {info['database']}",
+        location,
         "",
         "Строк в таблицах:",
     ]

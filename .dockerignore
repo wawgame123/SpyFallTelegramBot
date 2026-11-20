@@ -2,6 +2,7 @@
 !Dockerfile
 !requirements.txt
 !alembic.ini
+!starter_packs.sqlite.sql
 !migrations/
 !migrations/**
 !app/

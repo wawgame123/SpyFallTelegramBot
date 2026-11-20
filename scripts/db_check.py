@@ -3,18 +3,20 @@ import sys
 
 from dotenv import load_dotenv
 
-from app.database.info import check_connection, describe, ensure_mysql, format_info, mask_url
+from app.database.info import check_connection, describe, ensure_supported_database, format_info, mask_url
 from app.database.session import make_session_factory
 
 DEFAULT_URL = "mysql+pymysql://spy:spy@localhost:3306/spy_game?charset=utf8mb4"
 
 
-def run(url: str, require_mysql: bool = True) -> str:
-    if require_mysql:
-        ensure_mysql(url)
+def run(url: str) -> str:
+    ensure_supported_database(url)
     check_connection(url)
     factory = make_session_factory(url)
-    return f"Подключение: {mask_url(url)}\n\n" + format_info(describe(factory, url))
+    try:
+        return f"Подключение: {mask_url(url)}\n\n" + format_info(describe(factory, url))
+    finally:
+        factory.kw["bind"].dispose()
 
 
 def main() -> int:
@@ -25,7 +27,7 @@ def main() -> int:
     except Exception as err:
         print(f"Не удалось проверить базу данных: {err}")
         print(f"Подключение: {mask_url(url)}")
-        print("Проверьте, что служба MySQL запущена, а логин и пароль в DATABASE_URL верны.")
+        print("Проверьте адрес MySQL и учётные данные или доступ к файлу SQLite.")
         return 1
     return 0
 

@@ -3,7 +3,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from app.database.info import check_connection, ensure_mysql, mask_url
+from app.database.info import check_connection, ensure_supported_database, mask_url
 from app.database.migrate import run_migrations
 from app.database.session import make_session_factory
 from app.services.admin_service import AdminError, AdminService, parse_duration
@@ -194,7 +194,7 @@ def main() -> int:
     load_dotenv()
     url = os.getenv("DATABASE_URL", DEFAULT_URL)
     try:
-        ensure_mysql(url)
+        ensure_supported_database(url)
         check_connection(url)
         run_migrations(url)
         factory = make_session_factory(url)

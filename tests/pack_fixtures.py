@@ -1,4 +1,4 @@
-"""Test-only pack data. Production packs are loaded exclusively from MySQL."""
+"""Test-only pack data. The bot loads packs from the configured database."""
 
 from app.game.packs import Pack, PackLibrary
 

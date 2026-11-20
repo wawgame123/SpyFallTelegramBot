@@ -8,6 +8,8 @@ __pycache__/
 *.key
 *.db
 *.sqlite*
+!compose.sqlite.yml
+!starter_packs.sqlite.sql
 *.log
 *.pid
 *.py[cod]

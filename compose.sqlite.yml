@@ -1,0 +1,15 @@
+name: spyfall-sqlite
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:////data/spy_game.sqlite3
+    volumes:
+      - sqlite_data:/data
+
+volumes:
+  sqlite_data:

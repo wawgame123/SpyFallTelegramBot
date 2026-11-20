@@ -45,5 +45,5 @@ class PackLibrary:
 
 
 def load_default_library() -> PackLibrary:
-    """Return an empty library; production code must inject the MySQL library."""
+    """Return an empty library; production code loads packs from the database."""
     return PackLibrary([])

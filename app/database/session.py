@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from app.database.models import Base
@@ -38,10 +38,20 @@ def make_session_factory(url: str) -> sessionmaker:
     connect_args = {}
     if url.startswith("mysql+pymysql:"):
         connect_args = {"connect_timeout": 10, "read_timeout": 30, "write_timeout": 30}
+    elif url.startswith(("sqlite:", "sqlite+pysqlite:")):
+        connect_args = {"timeout": 15}
     engine = create_engine(
         url, future=True, pool_pre_ping=True, pool_recycle=1800,
         connect_args=connect_args,
     )
+    if engine.dialect.name == "sqlite":
+        @event.listens_for(engine, "connect")
+        def enable_foreign_keys(dbapi_connection, _):
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA foreign_keys = ON")
+            finally:
+                cursor.close()
     Base.metadata.create_all(engine)
     ensure_schema(engine)
     return sessionmaker(engine, expire_on_commit=False)

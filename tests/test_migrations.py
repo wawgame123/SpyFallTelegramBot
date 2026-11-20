@@ -1,6 +1,11 @@
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+
 from sqlalchemy import create_engine, inspect, text
 
 from app.database.migrate import run_migrations
+from app.database.pack_repository import PackRepository
 from app.database.session import make_session_factory
 
 
@@ -42,6 +47,25 @@ def test_migrations_are_idempotent_and_compatible_with_session_factory(tmp_path)
     run_migrations(url)
     factory = make_session_factory(url)
     assert factory is not None
+
+
+def test_sqlite_seed_uses_migrated_schema_and_can_be_imported_twice(tmp_path):
+    db_path = tmp_path / "spy_game.sqlite3"
+    url = f"sqlite:///{db_path.as_posix()}"
+    run_migrations(url)
+    script = Path(__file__).resolve().parents[1] / "starter_packs.sqlite.sql"
+    with closing(sqlite3.connect(db_path)) as connection:
+        for _ in range(2):
+            connection.executescript(script.read_text(encoding="utf-8"))
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    factory = make_session_factory(url)
+    try:
+        packs = PackRepository(factory).load_library().packs()
+        assert len(packs) == 8
+        assert sum(len(pack.words) for pack in packs) == 160
+        assert "пингвин" in packs[0].words
+    finally:
+        factory.kw["bind"].dispose()
 
 
 def test_legacy_game_sessions_get_is_test_column(tmp_path):
