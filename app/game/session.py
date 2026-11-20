@@ -21,7 +21,7 @@ REASONS = {
     Outcome.SPY_LEFT: "Шпион покинул игру. Победа игроков.",
     Outcome.SPY_WIN_VOTE: "Игроки ошиблись или не смогли определить шпиона.",
     Outcome.SPY_WIN_GUESS: "Шпион угадал секретное слово.",
-    Outcome.DRAW: "Шпион угадал слово во время голосования. Ничья.",
+    Outcome.DRAW: "Игроки раскрыли шпиона, а шпион угадал слово. Ничья.",
 }
 
 
@@ -37,7 +37,6 @@ class Stage(str, Enum):
     VOTE_REQUEST = "vote_request"
     VOTE_HANDOFF = "vote_handoff"
     VOTE_PICK = "vote_pick"
-    GUESS_WHO = "guess_who"
     GUESS_HANDOFF = "guess_handoff"
     GUESS_PICK = "guess_pick"
     GUESS_CONFIRM = "guess_confirm"
@@ -97,9 +96,6 @@ class LocalSession:
     vote_idx: int = 0
     turn_idx: int = 0
     theme_page: int = 0
-    guess_actor: str | None = None
-    guess_return: Stage = Stage.DISCUSSION
-    pending_alert: str | None = field(default=None, repr=False)
     guess_page: int = 0
     guess_word: str | None = None
     history: list[dict] = field(default_factory=list)
@@ -255,7 +251,7 @@ class LocalSession:
             return Screen(
                 f"Тайное голосование · {self.vote_idx + 1} из {len(self.round.players)}.{extra}"
                 f"\n\nПередайте телефон игроку {name}.",
-                [[("Голосовать", "me")], [("Угадать слово", "gu")]],
+                [[("Голосовать", "me")]],
             )
         if stage == Stage.VOTE_PICK:
             voter = self.round.players[self.vote_idx]
@@ -263,20 +259,12 @@ class LocalSession:
                 [(self.name_of(t), f"v:{t}")] for t in self.round.valid_targets(voter)
             ]
             return Screen(f"{self.name_of(voter)}, кого вы считаете шпионом?", rows)
-        if stage == Stage.GUESS_WHO:
-            rows = [[(self.name_of(p), f"gw:{p}")] for p in self.round.players]
-            rows.append([("Назад", "back")])
-            return Screen(
-                "Попытка угадать слово.\n\n"
-                "Возьмите телефон и выберите своё имя. Остальные, отвернитесь.",
-                rows,
-            )
         if stage == Stage.GUESS_HANDOFF:
             name = self.name_of(self._spy())
             return Screen(
                 f"Шпион определён. Игрок {name}, у вас последний шанс угадать слово."
                 f"\n\nПередайте телефон игроку {name}.",
-                [[("Угадать слово", "me")]],
+                [[("Угадать слово", "me"), ("Не угадывать", "skip")]],
             )
         if stage == Stage.GUESS_PICK:
             words = self._guess_words()
@@ -301,15 +289,18 @@ class LocalSession:
             if self.round.phase == Phase.LAST_CHANCE:
                 rows.append([("Не угадывать", "skip")])
             else:
-                rows.append([("Отмена", "cancel")])
+                rows.append([("Назад", "cancel")])
             return Screen(
                 f"Выберите слово. Тема: {self.round.theme}. Страница {page + 1}/{pages}",
                 rows,
             )
         if stage == Stage.GUESS_CONFIRM:
+            if self.round.phase == Phase.LAST_CHANCE:
+                hint = "Верный ответ принесёт ничью. Если ошибётесь, победят мирные."
+            else:
+                hint = "Попытка шпиона сразу завершит раунд."
             return Screen(
-                f"Вы выбрали: {self.guess_word}\n\nОтправить ответ? Попытка одна. "
-                "Результат станет известен в конце раунда.",
+                f"Вы выбрали: {self.guess_word}\n\nОтправить ответ? {hint}",
                 [[("Да", "yes"), ("Другое слово", "no")]],
             )
         if stage == Stage.RESULT:
@@ -364,10 +355,8 @@ class LocalSession:
             self._dispatch(action)
         except (Reject, GameError) as err:
             return Response(screen=self.screen(), alert=str(err))
-        alert = self.pending_alert
-        self.pending_alert = None
         self.seq += 1
-        return Response(screen=self.screen(), alert=alert)
+        return Response(screen=self.screen())
 
     def _role_text(self) -> str:
         if self.stage != Stage.DEAL_REVEAL or self.round is None:
@@ -463,16 +452,12 @@ class LocalSession:
                 self._after_turn(event)
                 return
             if name == "gu":
-                self.guess_return = Stage.DISCUSSION
-                self.stage = Stage.GUESS_WHO
+                self.guess_page = 0
+                self.stage = Stage.GUESS_PICK
                 return
         elif stage == Stage.VOTE_HANDOFF:
             if name == "me":
                 self.stage = Stage.VOTE_PICK
-                return
-            if name == "gu":
-                self.guess_return = Stage.VOTE_HANDOFF
-                self.stage = Stage.GUESS_WHO
                 return
         elif stage == Stage.VOTE_PICK:
             if name == "v":
@@ -482,20 +467,14 @@ class LocalSession:
                 self.vote_idx += 1
                 self._after_vote(phase_before)
                 return
-        elif stage == Stage.GUESS_WHO:
-            if name == "back":
-                self.stage = self.guess_return
-                return
-            if name == "gw" and arg in self.round.players:
-                self.guess_actor = arg
-                self.guess_page = 0
-                self.stage = Stage.GUESS_PICK
-                return
         elif stage == Stage.GUESS_HANDOFF:
             if name == "me":
-                self.guess_actor = self._spy()
                 self.guess_page = 0
                 self.stage = Stage.GUESS_PICK
+                return
+            if name == "skip":
+                self.round.skip_last_chance()
+                self._finish_round()
                 return
         elif stage == Stage.GUESS_PICK:
             if name == "pg" and arg.isdigit():
@@ -505,10 +484,11 @@ class LocalSession:
                 self.guess_word = self._guess_words()[int(arg)]
                 self.stage = Stage.GUESS_CONFIRM
                 return
-            if name == "cancel" and self.round.phase != Phase.LAST_CHANCE:
-                self.stage = self.guess_return
+            if name == "cancel" and self.round.phase == Phase.DISCUSSION:
+                self.guess_word = None
+                self.stage = Stage.DISCUSSION
                 return
-            if name == "skip" and self.round.phase == Phase.LAST_CHANCE:
+            if name == "skip":
                 self.round.skip_last_chance()
                 self._finish_round()
                 return
@@ -517,16 +497,16 @@ class LocalSession:
                 self.stage = Stage.GUESS_PICK
                 return
             if name == "yes":
-                word = self.guess_word or ""
-                actor = self.guess_actor or ""
+                actor = self._spy()
+                if self.round.phase == Phase.DISCUSSION:
+                    actor = self.round.current()
+                    if actor != self._spy():
+                        self.guess_word = None
+                        self.stage = Stage.DISCUSSION
+                        return
+                self.round.guess(actor, self.guess_word or "")
                 self.guess_word = None
-                if self.round.phase == Phase.LAST_CHANCE:
-                    self.round.guess(self._spy(), word)
-                    self._finish_round()
-                    return
-                self.round.secret_guess(actor, word)
-                self.pending_alert = "Ответ принят."
-                self.stage = self.guess_return
+                self._finish_round()
                 return
         elif stage == Stage.RESULT:
             if name == "nr":
@@ -613,12 +593,12 @@ class LocalSession:
             )
         except ValueError as err:
             raise Reject(str(err)) from err
+        self.round.guess_after_capture = True
         self.previous_spy = self.round.spy_id
         self.round_no += 1
         self.deal_idx = 0
         self.revealed = False
         self.vote_idx = 0
-        self.guess_actor = None
         self.guess_page = 0
         self.guess_word = None
         self.stage = Stage.DEAL_HANDOFF
@@ -644,11 +624,10 @@ class LocalSession:
             self.stage = Stage.DEAL_HANDOFF
         elif self.stage == Stage.VOTE_PICK:
             self.stage = Stage.VOTE_HANDOFF
-        elif self.stage in (Stage.GUESS_PICK, Stage.GUESS_CONFIRM, Stage.GUESS_WHO):
-            if self.round and self.round.phase == Phase.LAST_CHANCE:
-                self.stage = Stage.GUESS_HANDOFF
-            else:
-                self.stage = self.guess_return
+        elif self.stage in (Stage.GUESS_PICK, Stage.GUESS_CONFIRM):
+            self.stage = (
+                Stage.GUESS_HANDOFF if self.round.phase == Phase.LAST_CHANCE else Stage.DISCUSSION
+            )
         self.revealed = False
         self.guess_word = None
         self.edit_idx = None
@@ -671,8 +650,6 @@ class LocalSession:
             "deal_idx": self.deal_idx,
             "revealed": self.revealed,
             "vote_idx": self.vote_idx,
-            "guess_actor": self.guess_actor,
-            "guess_return": self.guess_return.value,
             "theme_page": self.theme_page,
             "guess_page": self.guess_page,
             "guess_word": self.guess_word,
@@ -693,13 +670,24 @@ class LocalSession:
         )
         for key, value in data.items():
             if key == "stage":
+                if value == "guess_who":
+                    value = data.get("guess_return", Stage.DISCUSSION.value)
                 session.stage = Stage.DISCUSSION if value == "vote_request" else Stage(value)
-            elif key == "turn_idx":
+            elif key in ("turn_idx", "guess_actor", "guess_return"):
                 continue
-            elif key == "guess_return":
-                session.guess_return = Stage(value)
             elif key == "round":
                 session.round = Round.from_dict(value) if value else None
             else:
                 setattr(session, key, value)
+        rnd = session.round
+        if rnd is not None and not rnd.guess_after_capture and rnd.phase != Phase.FINISHED:
+            # Resume saves from before local guessing moved to the end of voting.
+            rnd.guess_after_capture = True
+            if rnd.phase != Phase.LAST_CHANCE:
+                rnd.guesses_left = 1
+                rnd.secret_guess_word = None
+                rnd.secret_guess_correct = None
+                if session.stage in (Stage.GUESS_PICK, Stage.GUESS_CONFIRM):
+                    session.stage = Stage(data.get("guess_return", Stage.DISCUSSION.value))
+                    session.guess_word = None
         return session

@@ -1,6 +1,8 @@
 LEAVE_BAN_MINUTES = [5, 30, 120, 720, 1440]
 STRIKE_RESET_SECONDS = 7 * 24 * 3600
 LEAVE_CONFIRM_SECONDS = 10
+EARLY_GUESS_WARNING_LIMIT = 3
+EARLY_GUESS_BAN_SECONDS = 5 * 60
 
 
 def next_penalty(strikes: int, last_leave_at: float, now: float) -> tuple[int, int]:
@@ -32,6 +34,8 @@ def describe_ban(seconds: float) -> str:
 
 def ban_message(seconds: float, reason: str) -> str:
     left = describe_ban(seconds)
+    if reason == "early_guess":
+        return f"Вы заблокированы за ранние попытки угадать слово. Осталось: {left}."
     if reason == "admin":
         if left == "навсегда":
             return "Вы заблокированы администратором навсегда."

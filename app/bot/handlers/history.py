@@ -24,7 +24,9 @@ def _markup(screen: Screen) -> InlineKeyboardMarkup:
 
 async def _show(call: CallbackQuery, screen: Screen) -> None:
     try:
-        await call.message.edit_text(screen.text, reply_markup=_markup(screen))
+        await call.message.edit_text(
+            screen.text, reply_markup=_markup(screen), parse_mode="HTML" if screen.html else None
+        )
     except TelegramBadRequest as err:
         if "not modified" not in str(err):
             raise
@@ -32,7 +34,7 @@ async def _show(call: CallbackQuery, screen: Screen) -> None:
 
 
 def _int(value: str, default: int = 0) -> int:
-    return int(value) if value.isdigit() else default
+    return int(value) if len(value) <= 10 and value.isascii() and value.isdigit() else default
 
 
 @router.callback_query(F.data == "hist:menu")
@@ -68,12 +70,15 @@ async def on_lobby(
     call: CallbackQuery, history: HistoryService, user_settings: SettingsService, state: FSMContext
 ) -> None:
     await state.clear()
-    session_id = _int(call.data.split(":")[2], -1)
+    parts = call.data.split(":")
+    session_id = _int(parts[2], -1)
+    list_page = _int(parts[3]) if len(parts) > 3 else 0
     row = (await run_db(history.lobby, call.from_user.id, session_id))
     if row is None:
         await safe_answer(call, "История этого лобби недоступна", show_alert=True)
         return
-    await _show(call, view.lobby_screen(row, (await run_db(user_settings.tz_minutes, call.from_user.id))))
+    tz = await run_db(user_settings.tz_minutes, call.from_user.id)
+    await _show(call, view.lobby_screen(row, tz, list_page))
 
 
 @router.callback_query(F.data.startswith("hist:lr:"))
@@ -84,13 +89,14 @@ async def on_lobby_rounds(
     parts = call.data.split(":")
     session_id = _int(parts[2], -1)
     page = _int(parts[3]) if len(parts) > 3 else 0
+    list_page = _int(parts[4]) if len(parts) > 4 else 0
     result = (await run_db(history.lobby_rounds, call.from_user.id, session_id, page, view.PAGE_SIZE))
     if result is None:
         await safe_answer(call, "История этого лобби недоступна", show_alert=True)
         return
     rows, total = result
     tz = (await run_db(user_settings.tz_minutes, call.from_user.id))
-    await _show(call, view.lobby_rounds_screen(session_id, rows, total, page, tz))
+    await _show(call, view.lobby_rounds_screen(session_id, rows, total, page, tz, list_page))
 
 
 from app.bot.handlers.history_management import router as management_router

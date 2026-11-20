@@ -145,7 +145,7 @@ async def on_history(message: Message, state: FSMContext, tracker: ScreenTracker
     await state.clear()
     await _cleanup(message)
     screen = history_view.menu_screen()
-    await present(message, tracker, screen.text, history_markup(screen))
+    await present(message, tracker, screen.text, history_markup(screen), parse_mode="HTML")
 
 
 @router.message(F.text == BTN_ROOM, F.chat.type == "private")
@@ -227,7 +227,9 @@ async def on_rating(
 ) -> None:
     await state.clear()
     await _cleanup(message)
-    screen = stats_view.rating_screen((await run_db(stats.leaderboard, "points")), "points", message.from_user.id)
+    uid = message.from_user.id
+    rows, rank = await run_db(stats.rating, viewer_id=uid)
+    screen = stats_view.rating_screen(rows, "points", uid, viewer_rank=rank)
     await present(message, tracker, screen.text, to_plain_markup(screen))
 
 

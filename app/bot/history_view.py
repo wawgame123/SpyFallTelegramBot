@@ -1,4 +1,5 @@
 from datetime import timedelta, timezone
+from html import escape
 
 from app.game.session import Screen
 from app.services.history_service import LobbyRound, LobbyRow, UserRound
@@ -11,6 +12,7 @@ STATUS_TEXT = {
     "abandoned": "прервана",
 }
 RESULT_TEXT = {"win": "победа", "loss": "поражение", "draw": "ничья"}
+RESULT_ICON = {"win": "🏆", "loss": "●", "draw": "🤝"}
 ROLE_TEXT = {"spy": "шпион", "civilian": "обычный игрок"}
 
 
@@ -21,10 +23,11 @@ def _shift(value, tz_minutes: int):
 
 
 def tz_label(tz_minutes: int) -> str:
-    hours = tz_minutes // 60
-    if hours == 0:
-        return "UTC"
-    return f"UTC{'+' if hours > 0 else '-'}{abs(hours)}"
+    sign = "+" if tz_minutes > 0 else "-"
+    hours, minutes = divmod(abs(tz_minutes), 60)
+    if minutes:
+        return f"UTC{sign}{hours}:{minutes:02d}"
+    return f"UTC{sign}{hours}" if hours else "UTC"
 
 
 def fmt_dt(value, tz_minutes: int = 0) -> str:
@@ -58,119 +61,117 @@ def winners_text(row: LobbyRow) -> str:
     return "без победителя" if row.status != "active" else "пока нет лидера"
 
 
-def _pager(prefix: str, page: int, total: int) -> list[tuple[str, str]]:
-    pages = max(1, -(-total // PAGE_SIZE))
+def _page_count(total: int) -> int:
+    return max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+
+
+def _pager(prefix: str, page: int, total: int, suffix: str = "") -> list[list[tuple[str, str]]]:
+    pages = _page_count(total)
     nav = []
     if page > 0:
-        nav.append(("Назад", f"{prefix}:{page - 1}"))
+        nav.append(("← Предыдущая", f"{prefix}:{page - 1}{suffix}"))
     if page < pages - 1:
-        nav.append(("Вперёд", f"{prefix}:{page + 1}"))
-    return nav
+        nav.append(("Следующая →", f"{prefix}:{page + 1}{suffix}"))
+    return [nav] if nav else []
 
 
 def menu_screen() -> Screen:
     return Screen(
-        "📚 История игр\n\nВыберите раздел, чтобы посмотреть свои результаты и завершённые комнаты.",
+        "📚 История игр\n\n"
+        "<b>Мои игры</b> · ваши роли, результаты и очки по раундам.\n"
+        "<b>История лобби</b> · состав комнат и итоговый счёт.",
         [
-            [("Мои игры", "hist:games:0")],
-            [("История лобби", "hist:lobbies:0")],
+            [("Мои игры", "hist:games:0"), ("История лобби", "hist:lobbies:0")],
             [("Закрыть", "menu:home")],
         ],
+        html=True,
     )
 
 
 def games_screen(rows: list[UserRound], total: int, page: int, tz_minutes: int = 0) -> Screen:
+    back = [("К истории игр", "hist:menu")]
     if not rows:
-        return Screen(
-            "Мои игры\n\nВы ещё не сыграли ни одного онлайн-раунда.",
-            [[("Назад", "hist:menu")]],
-        )
-    pages = max(1, -(-total // PAGE_SIZE))
-    blocks = []
+        message = "На этой странице нет раундов." if total else "Вы ещё не сыграли ни одного онлайн-раунда."
+        return Screen(f"<b>Мои игры</b>\n\n{message}", [[("К началу списка", "hist:games:0")], back] if total else [back], html=True)
+    blocks, buttons = [], []
     for row in rows:
-        sign = "+" if row.score_delta >= 0 else ""
+        pack = row.pack_title or row.theme
+        result = RESULT_TEXT[row.result].capitalize()
         blocks.append(
-            f"🕒 {fmt_dt(row.finished_at, tz_minutes)}\n"
-            f"🎮 {row.lobby_title}\n"
-            f"🎯 {row.word} · тема: {row.theme}\n"
-            f"Набор: {row.pack_title or row.theme}\n"
-            f"🕵️ {row.spy_name} · {outcome_text(row.outcome, row.spy_name)}\n"
-            f"Ваша роль: {ROLE_TEXT[row.role]} · {RESULT_TEXT[row.result]}\n"
-            f"⭐ Очки: {sign}{row.score_delta}"
+            f"{RESULT_ICON[row.result]} <b>{result} · {row.score_delta:+d} оч.</b> · {fmt_short(row.finished_at, tz_minutes)}\n"
+            f"{escape(row.lobby_title)} · раунд {row.round_no}\n"
+            f"Набор: {escape(pack)} · слово: <b>{escape(row.word)}</b>\n"
+            f"Вы — {ROLE_TEXT[row.role]} · шпион: {escape(row.spy_name)}\n"
+            f"Итог: {escape(outcome_text(row.outcome, row.spy_name))}"
         )
-    nav = _pager("hist:games", page, total)
-    buttons = [[(f"Раунд: {r.pack_title or r.theme}"[:55], f"hist:rd:{r.round_id}")] for r in rows if r.round_id]
-    buttons += ([nav] if nav else []) + [[("Назад", "hist:menu")]]
-    return Screen(
-        f"Мои игры (страница {page + 1} из {pages})\n\n" + "\n\n".join(blocks), buttons
-    )
+        if row.round_id:
+            context = f":g:{page}" if page else ""
+            label = f"{fmt_short(row.finished_at, tz_minutes)} · {pack}"[:58]
+            buttons.append([(label, f"hist:rd:{row.round_id}{context}")])
+    text = f"<b>Мои игры</b> · {page + 1}/{_page_count(total)} · {tz_label(tz_minutes)}"
+    return Screen(text + "\n\n" + "\n\n".join(blocks), buttons + _pager("hist:games", page, total) + [back], html=True)
 
 
 def lobbies_screen(rows: list[LobbyRow], total: int, page: int, tz_minutes: int = 0) -> Screen:
+    back = [("К истории игр", "hist:menu")]
     if not rows:
-        return Screen(
-            "История лобби\n\nВы ещё не играли в онлайн-комнатах.",
-            [[("Назад", "hist:menu")]],
-        )
-    pages = max(1, -(-total // PAGE_SIZE))
-    buttons = []
+        message = "На этой странице нет лобби." if total else "Вы ещё не играли в онлайн-комнатах."
+        return Screen(f"<b>История лобби</b>\n\n{message}", [[("К началу списка", "hist:lobbies:0")], back] if total else [back], html=True)
+    blocks, buttons = [], []
     for row in rows:
-        label = f"{fmt_short(row.started_at, tz_minutes)}, {winners_text(row)}"
-        buttons.append([(label[:60], f"hist:lobby:{row.id}")])
-    nav = _pager("hist:lobbies", page, total)
-    if nav:
-        buttons.append(nav)
-    buttons.append([("Назад", "hist:menu")])
-    return Screen(
-        f"История лобби (страница {page + 1} из {pages})\n\nНажмите на лобби, чтобы открыть подробности.",
-        buttons,
-    )
+        date = fmt_short(row.started_at, tz_minutes)
+        blocks.append(
+            f"<b>{escape(row.title)}</b> · {date}\n"
+            f"{STATUS_TEXT.get(row.status, 'неизвестный статус').capitalize()} · "
+            f"игроков {len(row.players)} · раундов {row.rounds_count}\n"
+            f"🏆 {escape(winners_text(row))}"
+        )
+        buttons.append([(f"{date} · {row.title}"[:58], f"hist:lobby:{row.id}:{page}")])
+    text = f"<b>История лобби</b> · {page + 1}/{_page_count(total)} · {tz_label(tz_minutes)}"
+    return Screen(text + "\n\n" + "\n\n".join(blocks), buttons + _pager("hist:lobbies", page, total) + [back], html=True)
 
 
-def lobby_screen(row: LobbyRow, tz_minutes: int = 0) -> Screen:
+def lobby_screen(row: LobbyRow, tz_minutes: int = 0, list_page: int = 0) -> Screen:
     table = "\n".join(
-        f"{i}. {name}: {score}" for i, (name, score) in enumerate(row.players, 1)
+        f"{i}. {escape(name)} · <b>{score}</b> оч." for i, (name, score) in enumerate(row.players, 1)
     )
     text = (
-        f"{row.title}\n\n"
-        f"Начало: {fmt_dt(row.started_at, tz_minutes)}\n"
-        f"Статус: {STATUS_TEXT.get(row.status, row.status)}\n"
-        f"Сыграно раундов: {row.rounds_count}\n"
-        f"Победитель лобби: {winners_text(row)}\n\n"
-        f"Игроки и очки:\n{table}"
+        f"<b>{escape(row.title)}</b>\n"
+        f"{STATUS_TEXT.get(row.status, 'неизвестный статус').capitalize()} · {fmt_dt(row.started_at, tz_minutes)}\n\n"
+        f"Победитель лобби: <b>{escape(winners_text(row))}</b>\n"
+        f"Сыграно раундов: {row.rounds_count}\n\n"
+        f"<b>Игроки и очки</b>\n{table}"
     )
     return Screen(
         text,
         [
+            [("Раунды лобби", f"hist:lr:{row.id}:0:{list_page}")],
             *[[(name[:50], f"hist:sp:{row.id}:{uid}")] for uid, name in row.player_ids],
-            [("Игры этого лобби", f"hist:lr:{row.id}:0")],
-            [("К списку лобби", "hist:lobbies:0")],
+            [("К списку лобби", f"hist:lobbies:{list_page}")],
         ],
+        html=True,
     )
 
 
 def lobby_rounds_screen(
-    session_id: int, rows: list[LobbyRound], total: int, page: int, tz_minutes: int = 0
+    session_id: int, rows: list[LobbyRound], total: int, page: int, tz_minutes: int = 0,
+    list_page: int = 0,
 ) -> Screen:
-    back = [("К лобби", f"hist:lobby:{session_id}")]
+    back = [("К лобби", f"hist:lobby:{session_id}:{list_page}")]
     if not rows:
-        return Screen("В этом лобби пока нет завершённых раундов.", [back])
-    pages = max(1, -(-total // PAGE_SIZE))
-    blocks = []
+        return Screen("На этой странице нет завершённых раундов.", [back])
+    blocks, buttons = [], []
     for row in rows:
-        points = ", ".join(
-            f"{name} {'+' if delta >= 0 else ''}{delta}" for name, _, delta in row.scores
-        )
+        pack = row.pack_title or row.theme
+        points = ", ".join(f"{escape(name)} {delta:+d}" for name, _, delta in row.scores)
         blocks.append(
-            f"Раунд {row.round_no}, {fmt_dt(row.finished_at, tz_minutes)}\n"
-            f"Тема: {row.theme}. Слово: {row.word}\n"
-            f"Набор: {row.pack_title or row.theme}\n"
-            f"Шпион: {row.spy_name}, {outcome_text(row.outcome, row.spy_name)}\n"
+            f"<b>Раунд {row.round_no}</b> · {fmt_short(row.finished_at, tz_minutes)}\n"
+            f"Набор: {escape(pack)} · слово: <b>{escape(row.word)}</b>\n"
+            f"Шпион: {escape(row.spy_name)} · {escape(outcome_text(row.outcome, row.spy_name))}\n"
             f"Очки: {points}"
         )
-    nav = _pager(f"hist:lr:{session_id}", page, total)
-    buttons = [[(f"Раунд {r.round_no}: игроки и набор"[:55], f"hist:rd:{r.id}")] for r in rows if r.id]
-    buttons += ([nav] if nav else []) + [back]
-    return Screen(
-        f"Игры лобби (страница {page + 1} из {pages})\n\n" + "\n\n".join(blocks), buttons
-    )
+        if row.id:
+            buttons.append([(f"Раунд {row.round_no} · {pack}"[:58], f"hist:rd:{row.id}:l:{page}:{list_page}")])
+    text = f"<b>Раунды лобби</b> · {page + 1}/{_page_count(total)} · {tz_label(tz_minutes)}"
+    nav = _pager(f"hist:lr:{session_id}", page, total, f":{list_page}")
+    return Screen(text + "\n\n" + "\n\n".join(blocks), buttons + nav + [back], html=True)

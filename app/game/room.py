@@ -19,6 +19,7 @@ from app.game.scoring import Outcome
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 MIN_PLAYERS = 3
 LAST_CHANCE_SECONDS = 30
+COUNTDOWN_INTERVAL = 5
 MAX_NAME_LEN = 20
 MAX_MESSAGE_LEN = 200
 CHAT_KEEP = 8
@@ -44,6 +45,7 @@ class ActResult:
     left: bool = False
     closed: bool = False
     penalized: bool = False
+    early_guess: bool = False
 
 
 def new_code() -> str:
@@ -91,6 +93,7 @@ class Room:
         self.round: Round | None = None
         self.deadline: float | None = None
         self.chat: list[list] = []
+        self.civilian_has_spoken = False
         self.used_words: list[str] = []
         self.previous_spy: str | None = None
         self.history: list[dict] = []
@@ -100,6 +103,11 @@ class Room:
         self.themes_page = 0
         self.themes_notice = False
         self.session_id: int | None = None
+        self.practice_available = False
+        self.practice_done = False
+        self.practice = False
+        self.practice_poll: str | None = None
+        self.practice_votes: dict[str, bool] = {}
 
     def enable_test_mode(self, size: int, admin_id: int) -> None:
         self.settings["test_size"] = size
@@ -199,6 +207,18 @@ class Room:
     def _act(self, uid: int, name: str, arg: str, now: float) -> ActResult:
         if name == "leave":
             return self._leave(uid, now)
+        if name == "practice":
+            self._require_host(uid)
+            self._need_phase("lobby")
+            if not self.practice_available or self.practice_done or self.round_no or self.is_test:
+                raise RoomError("Пробный раунд сейчас недоступен")
+            self._check_round_start()
+            self.practice_poll = secrets.token_urlsafe(6)
+            self.practice_votes = {}
+            self.phase = "practice_vote"
+            return ActResult()
+        if name == "pv":
+            return self._practice_vote(uid, arg)
         if name == "rd":
             self._need_phase("lobby")
             self._member(uid)["ready"] = arg == "1"
@@ -275,7 +295,8 @@ class Room:
             return ActResult()
         if name == "set":
             self._require_host(uid)
-            self._need_phase("result")
+            if self.phase != "practice_result":
+                self._need_phase("result")
             self.phase = "lobby"
             self.host_ui = "settings"
             return ActResult()
@@ -317,6 +338,8 @@ class Room:
             self._require_spy(uid)
             if self.round.guesses_left <= 0:
                 raise RoomError("Попытки угадать слово закончились")
+            if self._is_early_guess():
+                return ActResult(changed=False, early_guess=True)
             self.guess_ui.setdefault(str(uid), {"page": 0, "word": None})
             return ActResult()
         if name in ("pg", "gp", "no", "cancel", "yes", "skip"):
@@ -339,8 +362,35 @@ class Room:
         index = options.index(current) if current in options else -1
         self.settings[field_name] = options[(index + 1) % len(options)]
 
-    def _start_round(self) -> None:
-        if self.phase not in ("lobby", "result"):
+    def _practice_vote(self, uid: int, arg: str) -> ActResult:
+        self._need_phase("practice_vote")
+        poll, _, choice = arg.partition(":")
+        if poll != self.practice_poll or choice not in ("1", "0", "cancel"):
+            raise RoomError("Это голосование уже закрыто")
+        if choice == "cancel":
+            self._require_host(uid)
+            self._close_practice_vote()
+            return ActResult()
+        self.practice_votes[str(uid)] = choice == "1"
+        yes = sum(self.practice_votes.values())
+        needed = len(self.players) // 2 + 1
+        if yes >= needed:
+            self._close_practice_vote()
+            self.practice = True
+            self._start_round()
+        elif yes + len(self.players) - len(self.practice_votes) < needed:
+            self._close_practice_vote()
+            self._note("Пробный раунд не набрал большинства. Можно начать игру.")
+        return ActResult()
+
+    def _close_practice_vote(self) -> None:
+        self.practice_done = True
+        self.practice_poll = None
+        self.practice_votes = {}
+        self.phase = "lobby"
+
+    def _check_round_start(self) -> None:
+        if self.phase not in ("lobby", "result", "practice_result"):
             raise RoomError("Раунд уже идёт")
         if self.round_no >= self.settings["rounds"]:
             raise RoomError("Все раунды сыграны. Завершите игру")
@@ -351,6 +401,9 @@ class Room:
             raise RoomError("Выберите хотя бы одну тему в настройках")
         if self.round_no == 0 and any(not p["ready"] for p in self.players):
             raise RoomError("Не все игроки готовы")
+
+    def _start_round(self) -> None:
+        self._check_round_start()
         pids = [str(p["id"]) for p in self.players]
         spy_override = self._forced_spy(pids)
         try:
@@ -370,7 +423,8 @@ class Room:
         except ValueError as err:
             raise RoomError(str(err)) from err
         self.previous_spy = self.round.spy_id
-        self.round_no += 1
+        if not self.practice:
+            self.round_no += 1
         self.phase = "dealing"
         self.deadline = None
         self.guess_ui = {}
@@ -422,6 +476,7 @@ class Room:
         self.phase = "playing"
         self.deadline = now + self.settings["turn_seconds"]
         self.chat = []
+        self.civilian_has_spoken = False
         self._note("Обсуждение началось")
 
     def current(self) -> str:
@@ -470,6 +525,8 @@ class Room:
             raise RoomError("Пустое сообщение")
         if len(cleaned) > MAX_MESSAGE_LEN:
             raise RoomError(f"Слишком длинное сообщение (максимум {MAX_MESSAGE_LEN} символов)")
+        if str(uid) != self.round.spy_id:
+            self.civilian_has_spoken = True
         self.chat.append([player["name"], cleaned])
         del self.chat[:-CHAT_KEEP * 3]
 
@@ -483,6 +540,13 @@ class Room:
         elif phase == Phase.RUNOFF_VOTE and phase_before != Phase.RUNOFF_VOTE:
             self._note("Ничья: дополнительное голосование")
 
+    def _is_early_guess(self) -> bool:
+        return (
+            not self.is_test
+            and self.round.phase == Phase.DISCUSSION
+            and not self.civilian_has_spoken
+        )
+
     def _guess_words(self) -> list[str]:
         return sorted(self.round.allowed_words, key=str.casefold)
 
@@ -492,6 +556,9 @@ class Room:
         ui = self.guess_ui.get(me)
         if ui is None:
             raise RoomError("Панель угадывания закрыта")
+        if name in ("gp", "yes") and self._is_early_guess():
+            self._require_spy(uid)
+            return ActResult(changed=False, early_guess=True)
         last_chance = self.round.phase == Phase.LAST_CHANCE
         words = self._guess_words()
         if name == "pg" and arg.isdigit():
@@ -528,6 +595,12 @@ class Room:
         raise RoomError("Это действие сейчас недоступно")
 
     def _finish_round(self) -> None:
+        if self.practice:
+            self.practice = False
+            self.phase = "practice_result"
+            self.deadline = None
+            self.guess_ui = {}
+            return
         deltas = self.round.settle(self.rules)
         for pid, delta in deltas.items():
             self.scores[pid] = self.scores.get(pid, 0) + delta
@@ -549,7 +622,9 @@ class Room:
     def _cancel_round(self) -> None:
         self.round = None
         self.phase = "lobby"
-        self.round_no = max(0, self.round_no - 1)
+        if not self.practice:
+            self.round_no = max(0, self.round_no - 1)
+        self.practice = False
         self.deadline = None
         self.guess_ui = {}
         self.host_ui = "lobby"
@@ -576,7 +651,11 @@ class Room:
         pid = str(uid)
         name = player["name"]
         active = self.phase in ("dealing", "playing") and self.round is not None
-        penalized = active and not self.is_test
+        penalized = active and not (self.is_test or self.practice)
+        if self.phase == "practice_vote":
+            self._close_practice_vote()
+            self.practice_done = False
+            self._note("Состав комнаты изменился. Голосование отменено.")
         self.guess_ui.pop(pid, None)
         note = f"{name} вышел"
         removed = False
@@ -622,9 +701,16 @@ class Room:
             return self._playing_view(uid, now)
         if self.phase == "result":
             return self._result_view(uid)
+        if self.phase == "practice_vote":
+            return self._practice_vote_view(uid)
+        if self.phase == "practice_result":
+            return self._practice_result_view(uid)
+        rows = [[("В меню", "leave")]]
+        if uid == self.host_id:
+            rows.insert(0, [("Реванш", f"rematch:{self.code}")])
         return Screen(
             f"<b>Игра завершена!</b>\n\nИтоговая таблица:\n{self.table()}",
-            [[("В меню", "leave")]],
+            rows,
             html=True,
         )
 
@@ -667,6 +753,8 @@ class Room:
         rows: list[list[tuple[str, str]]] = []
         if host:
             rows.append([("Начать игру", "start")])
+            if self.practice_available and not self.practice_done and not self.round_no:
+                rows.append([("Предложить пробный раунд", "practice")])
             if self.is_test:
                 rows.append([(f"Моя роль: {self._role_label()}", "cy:role")])
             rows.append([("Настройки", "ui:settings")])
@@ -752,6 +840,40 @@ class Room:
             html=True,
         )
 
+    def _round_heading(self) -> str:
+        return "Пробный раунд" if self.practice else f"Раунд {self.round_no} из {self.settings['rounds']}"
+
+    def _practice_vote_view(self, uid: int) -> Screen:
+        yes = sum(self.practice_votes.values())
+        needed = len(self.players) // 2 + 1
+        mine = self.practice_votes.get(str(uid))
+        poll = self.practice_poll
+        rows = [[("✓ За" if mine is True else "За", f"pv:{poll}:1"),
+                 ("✓ Против" if mine is False else "Против", f"pv:{poll}:0")]]
+        if uid == self.host_id:
+            rows.append([("Отменить голосование", f"pv:{poll}:cancel")])
+        rows.append([("Выйти", "leave")])
+        return Screen(
+            "<b>Сыграть пробный раунд?</b>\n\n"
+            "Можно потренироваться с текущим составом. Очки не начисляются.\n\n"
+            f"За: {yes} · нужно {needed}\n"
+            f"Проголосовали: {len(self.practice_votes)}/{len(self.players)}",
+            rows, html=True,
+        )
+
+    def _practice_result_view(self, uid: int) -> Screen:
+        rnd = self.round
+        rows = [[("Выйти", "leave")]]
+        text = (
+            "<b>Пробный раунд завершён</b>\n\n"
+            f"Шпион: <b>{esc(self.name_of(rnd.spy_id))}</b>\n"
+            f"Слово: <b>{esc(rnd.word)}</b>\n{REASONS[rnd.outcome]}\n\n"
+            "Теперь можно начать игру на очки."
+        )
+        if uid == self.host_id:
+            rows.insert(0, [("Начать игру", "start"), ("Изменить настройки", "set")])
+        return Screen(text, rows, html=True)
+
     def _dealing_view(self, uid: int) -> Screen:
         seen = sum(1 for p in self.players if p["seen"])
         lines = "\n".join(
@@ -761,9 +883,15 @@ class Room:
         if uid == self.host_id:
             rows.append([("Начать обсуждение", "force")])
         rows.append([("Выйти", "leave")])
+        practice_note = (
+            "\n\nОбычные игроки знают слово и дают подсказки. "
+            "Шпион слушает подсказки и пытается угадать слово."
+            if self.practice else ""
+        )
         return Screen(
-            f"<b>Раунд {self.round_no} из {self.settings['rounds']}</b>\n\n"
+            f"<b>{self._round_heading()}</b>\n\n"
             "Нажмите «Показать роль»: она появится во всплывающем окне и не останется в чате."
+            f"{practice_note}"
             f"\n\nПосмотрели: {seen} из {len(self.players)}\n{lines}",
             rows,
             html=True,
@@ -773,7 +901,7 @@ class Room:
         rnd = self.round
         me = str(uid)
         head = (
-            f"<b>Раунд {self.round_no} из {self.settings['rounds']}</b> · "
+            f"<b>{self._round_heading()}</b> · "
             f"{esc(rnd.theme)}"
         )
         if rnd.phase == Phase.LAST_CHANCE:
@@ -846,7 +974,7 @@ class Room:
 
     def _left_seconds(self, now: float, limit: int) -> int:
         remaining = max(0.0, (self.deadline or now) - now)
-        return min(limit, math.ceil(remaining / 10) * 10)
+        return min(limit, math.ceil(remaining / COUNTDOWN_INTERVAL) * COUNTDOWN_INTERVAL)
 
     def _guess_view(self, head: str, me: str, now: float | None = None) -> Screen:
         ui = self.guess_ui.get(me) or {"page": 0, "word": None}
@@ -854,13 +982,14 @@ class Room:
         last_chance = self.round.phase == Phase.LAST_CHANCE
         word = ui.get("word")
         if word:
+            if self.round.phase == Phase.DISCUSSION:
+                hint = "Ошибка сейчас означает поражение."
+            elif last_chance:
+                hint = "Верный ответ даст ничью."
+            else:
+                hint = "Итог станет известен после голосования."
             return Screen(
-                f"{head}\n\nВы выбрали: <b>{esc(word)}</b>\n\nОтправить ответ? "
-                + (
-                    "Ошибка сейчас означает поражение."
-                    if self.round.phase == Phase.DISCUSSION
-                    else "Верный ответ сейчас даст ничью."
-                ),
+                f"{head}\n\nВы выбрали: <b>{esc(word)}</b>\n\nОтправить ответ? {hint}",
                 [[("Да", "yes"), ("Другое слово", "no")]],
                 html=True,
             )
@@ -897,8 +1026,8 @@ class Room:
             )
         else:
             title = (
-                "Выберите слово. Попытка одна: верный ответ во время голосования даёт ничью, "
-                "ошибка сжигает попытку."
+                "Выберите слово. Если угадаете, будет ничья при раскрытии шпиона или ваша победа, "
+                "если вас не раскроют. Ошибка сжигает попытку."
             )
         return Screen(f"{head}\n\n{title}\nСтраница {page + 1}/{pages}", rows, html=True)
 
@@ -907,7 +1036,7 @@ class Room:
         if rnd is None or not rnd.secret_guess_word:
             return ""
         verdict = "верно" if rnd.secret_guess_correct else "неверно"
-        return f"\n\nТайная попытка шпиона: {esc(rnd.secret_guess_word)} ({verdict})"
+        return f"\n\nПопытка шпиона: {esc(rnd.secret_guess_word)} ({verdict})"
 
     def _result_view(self, uid: int) -> Screen:
         info = self.history[-1]
@@ -949,6 +1078,7 @@ class Room:
             "round": self.round.to_dict() if self.round else None,
             "deadline": self.deadline,
             "chat": [list(c) for c in self.chat],
+            "civilian_has_spoken": self.civilian_has_spoken,
             "used_words": list(self.used_words),
             "previous_spy": self.previous_spy,
             "history": list(self.history),
@@ -958,6 +1088,10 @@ class Room:
             "themes_page": self.themes_page,
             "themes_notice": self.themes_notice,
             "session_id": self.session_id,
+            "practice_done": self.practice_done,
+            "practice": self.practice,
+            "practice_poll": self.practice_poll,
+            "practice_votes": dict(self.practice_votes),
         }
 
     @classmethod
@@ -970,6 +1104,11 @@ class Room:
                 room.round = Round.from_dict(value) if value else None
             elif key not in ("code", "token", "host_id", "title", "turn_idx", "guess_ui"):
                 setattr(room, key, value)
+        if "civilian_has_spoken" not in data and room.round is not None:
+            spy_name = room.name_of(room.round.spy_id)
+            room.civilian_has_spoken = any(
+                author is not None and author != spy_name for author, _ in room.chat
+            )
         stored = data.get("guess_ui")
         if isinstance(stored, dict) and "page" not in stored:
             room.guess_ui = {str(k): dict(v) for k, v in stored.items()}

@@ -45,6 +45,7 @@ class Round:
     secret_guess_correct: bool | None = None
     outcome: Outcome | None = None
     settled: bool = False
+    guess_after_capture: bool = False
 
     def _require_player(self, player_id: str) -> None:
         if player_id not in self.players:
@@ -119,12 +120,7 @@ class Round:
             self.candidates.remove(player_id)
             if len(self.candidates) <= 1:
                 survivor = self.candidates[0] if self.candidates else None
-                if self.secret_guess_correct is True:
-                    self._finish(Outcome.DRAW)
-                elif survivor == self.spy_id:
-                    self._finish(Outcome.CIVILIANS_WIN)
-                else:
-                    self._finish(Outcome.SPY_WIN_VOTE)
+                self._finish_vote(suspect=survivor)
                 return "finished"
         if self.phase in (Phase.SUSPECT_VOTE, Phase.RUNOFF_VOTE):
             if self.players and len(self.votes) == len(self.players):
@@ -132,7 +128,7 @@ class Round:
         return "next"
 
     def secret_guess(self, player_id: str, word: str) -> None:
-        if self.open_guess or self.phase not in (
+        if self.open_guess or self.guess_after_capture or self.phase not in (
             Phase.DISCUSSION,
             Phase.SUSPECT_VOTE,
             Phase.RUNOFF_VOTE,
@@ -161,24 +157,33 @@ class Round:
 
     def _resolve_votes(self) -> None:
         _, leaders = tally(self.votes)
-        guessed = self.secret_guess_correct is True
         if len(leaders) == 1:
-            if guessed:
-                self._finish(Outcome.DRAW)
-            elif leaders[0] == self.spy_id:
-                self._finish(Outcome.CIVILIANS_WIN)
-            else:
-                self._finish(Outcome.SPY_WIN_VOTE)
+            self._finish_vote(suspect=leaders[0])
         elif self.phase == Phase.SUSPECT_VOTE:
             self.candidates = leaders
             self.votes = {}
             self.phase = Phase.RUNOFF_VOTE
         else:
-            self._finish(Outcome.DRAW if guessed else Outcome.SPY_WIN_VOTE)
+            self._finish_vote(suspect=None)
+
+    def _finish_vote(self, suspect: str | None) -> None:
+        if self.guess_after_capture:
+            if suspect == self.spy_id:
+                self.phase = Phase.LAST_CHANCE
+            else:
+                self._finish(Outcome.SPY_WIN_VOTE)
+            return
+        guessed = self.secret_guess_correct is True
+        if suspect == self.spy_id:
+            self._finish(Outcome.DRAW if guessed else Outcome.CIVILIANS_WIN)
+        else:
+            self._finish(Outcome.SPY_WIN_GUESS if guessed else Outcome.SPY_WIN_VOTE)
 
     def guess(self, player_id: str, word: str) -> bool:
-        allowed = [Phase.SUSPECT_VOTE, Phase.RUNOFF_VOTE, Phase.LAST_CHANCE]
-        if self.open_guess:
+        allowed = [Phase.LAST_CHANCE]
+        if not self.guess_after_capture:
+            allowed.extend((Phase.SUSPECT_VOTE, Phase.RUNOFF_VOTE))
+        if self.open_guess or self.guess_after_capture:
             allowed.append(Phase.DISCUSSION)
         self._require_phase(*allowed)
         if player_id != self.spy_id:
@@ -193,8 +198,11 @@ class Round:
             self._finish(Outcome.DRAW if correct else Outcome.CIVILIANS_WIN)
         elif self.phase == Phase.DISCUSSION:
             self._finish(Outcome.SPY_WIN_GUESS if correct else Outcome.SPY_WRONG_GUESS)
-        elif correct:
-            self._finish(Outcome.DRAW)
+        else:
+            self.secret_guess_word = word
+            self.secret_guess_correct = correct
+            if len(self.players) == 1:
+                self._finish_vote(suspect=None)
         return correct
 
     def skip_last_chance(self) -> None:
@@ -235,6 +243,7 @@ class Round:
             "secret_guess_correct": self.secret_guess_correct,
             "outcome": self.outcome.value if self.outcome else None,
             "settled": self.settled,
+            "guess_after_capture": self.guess_after_capture,
         }
 
     @classmethod

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Double, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Double, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -180,3 +180,4 @@ class UserPenalty(Base):
     banned_until: Mapped[float] = mapped_column(Double, default=0.0)
     last_leave_at: Mapped[float] = mapped_column(Double, default=0.0)
     reason: Mapped[str] = mapped_column(String(16), default="leave", server_default="leave")
+    early_guess_warnings: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)

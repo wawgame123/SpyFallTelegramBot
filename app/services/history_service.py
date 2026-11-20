@@ -20,6 +20,7 @@ class UserRound:
     round_id: int = 0
     pack_id: int | None = None
     pack_title: str | None = None
+    round_no: int = 0
 
 
 @dataclass
@@ -88,6 +89,7 @@ class HistoryService:
                     result=rp.result,
                     score_delta=rp.score_delta,
                     round_id=match.id, pack_id=match.pack_id, pack_title=match.pack_title,
+                    round_no=match.round_no,
                 )
                 for rp, match, session in db.execute(stmt)
             ]
@@ -198,7 +200,8 @@ class HistoryService:
             players = db.execute(select(RoundPlayer).where(RoundPlayer.round_id == round_id).order_by(RoundPlayer.score_delta.desc(), RoundPlayer.name)).scalars()
             return {"id": match.id, "session_id": match.session_id, "round_no": match.round_no,
                     "pack_id": match.pack_id, "pack_title": match.pack_title,
-                    "theme": match.theme, "word": match.word,
+                    "theme": match.theme, "word": match.word, "finished_at": match.finished_at,
+                    "outcome": match.outcome, "spy_name": match.spy_name,
                     "players": [(p.user_id, p.name, p.score_delta, p.role) for p in players]}
 
     def player_round(self, user_id: int, session_id: int, target: int) -> int | None:

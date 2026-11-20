@@ -7,7 +7,7 @@ from app.bot import stats_view
 from app.bot.ui import safe_answer
 from app.bot.keyboards.render import to_plain_markup
 from app.game.session import Screen
-from app.services.stats_service import SORTS, StatsService
+from app.services.stats_service import PERIOD_DAYS, SORTS, StatsService
 
 router = Router()
 
@@ -23,10 +23,14 @@ async def _edit(call: CallbackQuery, screen: Screen) -> None:
 
 @router.callback_query(F.data.startswith("stat:rating:"))
 async def on_rating(call: CallbackQuery, stats: StatsService) -> None:
-    sort = call.data.split(":")[2]
+    parts = call.data.split(":")
+    sort = parts[2]
+    period = parts[3] if len(parts) > 3 and parts[3] in PERIOD_DAYS else "all"
     if sort not in SORTS:
         sort = "points"
-    await _edit(call, stats_view.rating_screen((await run_db(stats.leaderboard, sort)), sort, call.from_user.id))
+    uid = call.from_user.id
+    rows, rank = await run_db(stats.rating, sort, period, uid)
+    await _edit(call, stats_view.rating_screen(rows, sort, uid, period, rank))
 
 
 @router.callback_query(F.data == "stat:profile")

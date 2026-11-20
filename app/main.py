@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.health import PollingHealthMiddleware, health_path, monitor_health
 from app.database.worker import run_db
+from app.bot.backlog import replay_pending_updates
 
 from app.bot.handlers import admin as admin_handlers
 from app.bot.handlers import history, local, menu, online
@@ -29,6 +30,7 @@ from app.bot.tracker import ScreenTracker
 from app.core.config import Settings, load_settings
 from app.core.console import start_console_control
 from app.database.info import check_connection, ensure_mysql, mask_url
+from app.database.migrate import run_migrations
 from app.database.pack_repository import PackRepository
 from app.database.repository import LocalGameRepository
 from app.database.session import make_session_factory
@@ -60,7 +62,9 @@ def build_dispatcher(
     register_error_handlers(dp)
     throttle = ThrottleMiddleware(0.25)
     dp.message.outer_middleware(throttle)
-    dp.callback_query.outer_middleware(throttle)
+    dp.update.outer_middleware.unregister(dp.fsm)
+    dp.update.outer_middleware(throttle)
+    dp.update.outer_middleware(dp.fsm)
     dp.callback_query.outer_middleware(PrivateCallbacksMiddleware())
     tracker = ScreenTracker(anchor_file)
     dp.callback_query.outer_middleware(TrackScreensMiddleware(tracker))
@@ -92,6 +96,28 @@ def build_dispatcher(
     return dp, runtime
 
 
+async def poll(bot: Bot, dp: Dispatcher, runtime: OnlineRuntime, factory: sessionmaker) -> None:
+    # Give queued actions a chance to update game state before expiring old turns
+    # or removing inactive rooms and local games.
+    try:
+        await replay_pending_updates(bot, dp)
+        polling_health = PollingHealthMiddleware()
+        bot.session.middleware(polling_health)
+        ticker = asyncio.create_task(runtime.run_ticker(), name="room-timer")
+        health = asyncio.create_task(
+            monitor_health(factory, runtime, ticker, polling_health), name="health-monitor",
+        )
+        try:
+            await dp.start_polling(bot, close_bot_session=False)
+        finally:
+            ticker.cancel()
+            health.cancel()
+            await asyncio.gather(ticker, health, return_exceptions=True)
+    finally:
+        health_path().unlink(missing_ok=True)
+        await bot.session.close()
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     health_path().unlink(missing_ok=True)
@@ -107,6 +133,7 @@ async def main() -> None:
             f"Не удалось подключиться к MySQL ({mask_url(settings.database_url)}): {err}\n"
             "Проверьте, что служба MySQL запущена, а логин и пароль в DATABASE_URL верны."
         ) from err
+    await run_db(run_migrations, settings.database_url)
     factory = await run_db(make_session_factory, settings.database_url)
     session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
     bot = Bot(token=settings.bot_token, session=session)
@@ -130,20 +157,7 @@ async def main() -> None:
         anchor_file=Path(__file__).resolve().parents[1] / ".ui_anchors.json",
     )
     start_console_control()
-    polling_health = PollingHealthMiddleware()
-    bot.session.middleware(polling_health)
-    ticker = asyncio.create_task(runtime.run_ticker(), name="room-timer")
-    health = asyncio.create_task(
-        monitor_health(factory, runtime, ticker, polling_health), name="health-monitor",
-    )
-    try:
-        await dp.start_polling(bot)
-    finally:
-        ticker.cancel()
-        health.cancel()
-        await asyncio.gather(ticker, health, return_exceptions=True)
-        health_path().unlink(missing_ok=True)
-        await bot.session.close()
+    await poll(bot, dp, runtime, factory)
 
 
 if __name__ == "__main__":

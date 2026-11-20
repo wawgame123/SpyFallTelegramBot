@@ -7,6 +7,7 @@ SORT_LABELS = {
     "spy": "Победы за шпиона",
     "rate": "Процент побед",
 }
+PERIOD_LABELS = {"all": "Всё время", "week": "7 дней", "month": "30 дней"}
 
 
 def profile_screen(profile: Profile | None, name: str) -> Screen:
@@ -28,8 +29,11 @@ def profile_screen(profile: Profile | None, name: str) -> Screen:
     return Screen(text, [[("Закрыть", "menu:home")]])
 
 
-def rating_screen(rows: list[RatingRow], sort: str, viewer_id: int | None = None) -> Screen:
-    title = f"🏆 Рейтинг · {SORT_LABELS[sort].lower()}"
+def rating_screen(
+    rows: list[RatingRow], sort: str, viewer_id: int | None = None,
+    period: str = "all", viewer_rank: RatingRow | None = None,
+) -> Screen:
+    title = f"🏆 Рейтинг · {PERIOD_LABELS[period].lower()}\n{SORT_LABELS[sort]}"
     if not rows:
         note = (
             f"\n\nВ рейтинг попадают игроки, сыгравшие не менее {MIN_GAMES_FOR_RATE} раундов."
@@ -49,9 +53,26 @@ def rating_screen(rows: list[RatingRow], sort: str, viewer_id: int | None = None
         body = "\n".join(lines)
         if sort == "rate":
             body += f"\n\nУчитываются игроки с {MIN_GAMES_FOR_RATE}+ раундами."
+    if viewer_rank:
+        body += (
+            f"\n\nВаше место: {viewer_rank.place} · {viewer_rank.points} оч.\n"
+            f"Побед {viewer_rank.wins} из {viewer_rank.games} ({viewer_rank.win_rate}%), "
+            f"за шпиона {viewer_rank.spy_wins}"
+        )
+    elif viewer_id is not None and not any(row.user_id == viewer_id for row in rows):
+        body += "\n\nВаше место: пока нет в рейтинге за этот период."
+
+    def action(key: str, span: str) -> str:
+        suffix = f":{span}" if span != "all" else ""
+        return f"stat:rating:{key}{suffix}"
+
     buttons = [
-        [(label if key != sort else f"[x] {label}", f"stat:rating:{key}")]
+        [(label if key != sort else f"[x] {label}", action(key, period))]
         for key, label in SORT_LABELS.items()
     ]
+    buttons.append([
+        (f"[x] {label}" if span == period else label, action(sort, span))
+        for span, label in PERIOD_LABELS.items()
+    ])
     buttons.append([("Закрыть", "menu:home")])
     return Screen(f"{title}\n\n{body}", buttons)

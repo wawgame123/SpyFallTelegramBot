@@ -23,8 +23,11 @@ from app.database.models import (
 from app.game.engine import Phase
 from app.services.limits import FailedJoinLimiter
 from app.game.packs import PackLibrary, load_default_library
-from app.game.room import Room, RoomError, new_code
+from app.game.room import MIN_PLAYERS, Room, RoomError, new_code
 from app.services.penalty import (
+    EARLY_GUESS_BAN_SECONDS,
+    EARLY_GUESS_WARNING_LIMIT,
+    STRIKE_RESET_SECONDS,
     ban_message,
     format_duration,
     next_penalty,
@@ -66,7 +69,7 @@ class RoomService:
             library = library.with_packs(self._packs.packs_by_slugs(missing))
         return library
 
-    def _room(self, rec: RoomRecord) -> Room:
+    def _room(self, db, rec: RoomRecord) -> Room:
         state = json.loads(rec.state)
         themes = state.get("settings", {}).get("themes")
         if self._packs is not None and state.get("phase") != "lobby" and themes:
@@ -76,7 +79,22 @@ class RoomService:
             library = PackLibrary(self._packs.packs_by_slugs(themes))
         else:
             library = self._host_library(rec.host_id, themes)
-        return Room.from_dict(state, library, self._rng)
+        room = Room.from_dict(state, library, self._rng)
+        if room.phase == "lobby" and not room.is_test and not room.round_no and not room.practice_done:
+            self._set_practice_availability(db, room)
+        return room
+
+    def _set_practice_availability(self, db, room: Room) -> None:
+        ids = [p["id"] for p in room.players]
+        if len(ids) < MIN_PLAYERS:
+            room.practice_available = False
+            return
+        experienced = db.scalars(
+            select(SessionPlayer.user_id).distinct()
+            .join(GameSession, SessionPlayer.session_id == GameSession.id)
+            .where(SessionPlayer.user_id.in_(ids), GameSession.is_test.is_(False))
+        ).all()
+        room.practice_available = len(experienced) < len(ids)
 
     def _activity_time(self):
         return datetime.fromtimestamp(self._clock(), timezone.utc)
@@ -229,6 +247,30 @@ class RoomService:
         row.last_leave_at = now
         return strikes, minutes
 
+    def _warn_early_guess(self, db, user_id: int, now: float) -> tuple[str, bool]:
+        row = db.get(UserPenalty, user_id, with_for_update=True)
+        if row is None:
+            row = UserPenalty(user_id=user_id)
+            db.add(row)
+        cutoff = now - STRIKE_RESET_SECONDS
+        warnings = [stamp for stamp in (row.early_guess_warnings or []) if cutoff < stamp <= now]
+        warnings.append(now)
+        count = len(warnings)
+        if count < EARLY_GUESS_WARNING_LIMIT:
+            row.early_guess_warnings = warnings
+            return (
+                f"Предупреждение {count}/{EARLY_GUESS_WARNING_LIMIT}. "
+                "Дождитесь первого сообщения от другого игрока.",
+                False,
+            )
+        row.early_guess_warnings = []
+        until = now + EARLY_GUESS_BAN_SECONDS
+        if until >= (row.banned_until or 0):
+            row.banned_until = until
+            row.reason = "early_guess"
+        alert = ban_message(row.banned_until - now, row.reason)
+        return f"Предупреждение {count}/{EARLY_GUESS_WARNING_LIMIT}. {alert}", True
+
     def room_id_of(self, user_id: int) -> int | None:
         with self._factory() as db:
             member = db.get(RoomMember, user_id)
@@ -240,14 +282,20 @@ class RoomService:
             if rec is None:
                 return None
             original_themes = json.loads(rec.state).get("settings", {}).get("themes", [])
-            room = self._room(rec)
+            room = self._room(db, rec)
             if room.phase == "lobby" and original_themes != room.settings["themes"]:
                 rec = self._lock(db, room_id)
                 if rec is None:
                     return None
-                room = self._room(rec)
+                room = self._room(db, rec)
                 self._store(rec, room)
             return room
+
+    def _new_code(self, db) -> str:
+        code = new_code()
+        while db.execute(select(RoomRecord.id).where(RoomRecord.code == code)).first():
+            code = new_code()
+        return code
 
     def create(self, user_id: int, name: str, test_size: int | None = None) -> Update:
         if test_size not in (None, 1, 2):
@@ -257,9 +305,7 @@ class RoomService:
                 raise RoomError("Вы уже находитесь в комнате")
             if test_size is None:
                 self._check_ban(db, user_id)
-            code = new_code()
-            while db.execute(select(RoomRecord.id).where(RoomRecord.code == code)).first():
-                code = new_code()
+            code = self._new_code(db)
             token = secrets.token_urlsafe(9)
             room = Room(code, token, user_id, "", self._host_library(user_id), self._rng)
             room.join(user_id, name)
@@ -280,13 +326,13 @@ class RoomService:
         if member:
             if member.room_id == rec.id:
                 rec.last_activity_at = self._activity_time()
-                return Update(room_id=rec.id, room=self._room(rec), changed=False)
+                return Update(room_id=rec.id, room=self._room(db, rec), changed=False)
             raise RoomError("Вы уже в другой комнате. Сначала выйдите из неё")
         self._check_ban(db, user_id)
         locked = self._lock(db, rec.id)
         if locked is None:
             raise RoomError("Лобби больше неактивно. Попросите новое приглашение.")
-        room = self._room(locked)
+        room = self._room(db, locked)
         room.join(user_id, name)
         self._store(locked, room, player_activity=True)
         db.add(RoomMember(user_id=user_id, room_id=rec.id))
@@ -337,7 +383,10 @@ class RoomService:
             raise RoomError("Этот игровой экран устарел. Откройте «Моя комната».")
 
     def _leave_prompt(self, db, room, user_id):
-        penalizable = room.phase in ("dealing", "playing") and room.round is not None and not room.is_test
+        penalizable = (
+            room.phase in ("dealing", "playing") and room.round is not None
+            and not (room.is_test or room.practice)
+        )
         if not penalizable:
             return "Вы действительно хотите покинуть комнату?"
         strikes, minutes = self._penalty_preview(db, user_id, self._clock())
@@ -358,10 +407,46 @@ class RoomService:
                 raise RoomError("Комната больше не существует")
             if expected_room_id is not None and member.room_id != expected_room_id:
                 raise RoomError("Это подтверждение относится к другой комнате")
-            room = self._room(rec)
+            room = self._room(db, rec)
             self._validate_panel(room, user_id, expected_panel_id)
             rec.last_activity_at = self._activity_time()
             return self._leave_prompt(db, room, user_id)
+
+    def _rematch(self, db, rec: RoomRecord, previous: Room, user_id: int, code: str) -> Update:
+        previous._require_host(user_id)
+        if previous.phase != "final" or previous.code != code:
+            raise RoomError("Реванш доступен после завершения игры")
+        if not previous.is_test:
+            self._check_ban(db, user_id)
+        self._end_session(db, previous.session_id, "finished")
+        rec.code = self._new_code(db)
+        rec.invite_token = secrets.token_urlsafe(9)
+        rec.created_at = datetime.now(timezone.utc)
+        room = Room(
+            rec.code, rec.invite_token, user_id, previous.title, self._host_library(user_id),
+            self._rng, previous.rules,
+        )
+        room.settings = dict(previous.settings)
+        eligible = previous.players
+        if not previous.is_test:
+            banned = set(db.scalars(
+                select(UserPenalty.user_id).where(
+                    UserPenalty.user_id.in_([player["id"] for player in previous.players]),
+                    UserPenalty.banned_until > self._clock(),
+                )
+            ))
+            if banned:
+                db.execute(delete(RoomMember).where(
+                    RoomMember.room_id == rec.id, RoomMember.user_id.in_(banned)
+                ))
+                eligible = [player for player in eligible if player["id"] not in banned]
+        room.players = [
+            dict(player, ready=player["id"] == user_id, seen=False) for player in eligible
+        ]
+        room.scores = {str(player["id"]): 0 for player in room.players}
+        room.previous_spy = previous.previous_spy
+        self._store(rec, room, player_activity=True)
+        return Update(room_id=rec.id, room=room)
 
     def act(self, user_id: int, action: str, *, expected_room_id=None, expected_panel_id=None, expected_leave_text=None) -> Update:
         with self._factory.begin() as db:
@@ -374,20 +459,37 @@ class RoomService:
             if rec is None:
                 db.delete(member)
                 raise RoomError("Комната больше не существует")
-            room = self._room(rec)
+            room = self._room(db, rec)
             self._validate_panel(room, user_id, expected_panel_id)
             if expected_leave_text is not None and self._leave_prompt(db, room, user_id) != expected_leave_text:
                 raise RoomError("Условия выхода изменились. Нажмите «Выйти» и подтвердите заново.")
             now = self._clock()
+            if action.startswith("rematch:"):
+                return self._rematch(db, rec, room, user_id, action.split(":", 1)[1])
             if action == "leave_confirm":
                 action = "leave"
-            if action in ("start", "next") and self._packs is not None:
+            starting = action in ("start", "next", "practice") or (
+                action.startswith("pv:") and action.endswith(":1")
+            )
+            if starting and self._packs is not None:
                 available = self._packs.library_for(room.host_id)
                 if any(not available.has(slug) for slug in room.settings.get("themes", [])):
                     raise RoomError("Выбранный набор удалён, заблокирован или стал недоступен. Выберите темы заново.")
             result = room.act(user_id, action, now)
+            early_guess = result.early_guess
+            if early_guess:
+                if room.practice:
+                    return Update(
+                        room_id=rec.id, room=room,
+                        alert="Дождитесь первого сообщения от другого игрока.", changed=False,
+                    )
+                alert, banned = self._warn_early_guess(db, user_id, now)
+                if not banned:
+                    return Update(room_id=rec.id, room=room, alert=alert, changed=False)
+                result = room.act(user_id, "leave", now)
+                result.alert = alert
             penalty = None
-            if result.left and result.penalized:
+            if result.left and result.penalized and not early_guess:
                 penalty = self._apply_penalty(db, user_id, now)
             if result.left:
                 db.delete(member)
@@ -397,7 +499,8 @@ class RoomService:
                 db.execute(delete(RoomMember).where(RoomMember.room_id == rec.id))
                 db.delete(rec)
                 return Update(
-                    room_id=rec.id, room=None, left_user=user_id, changed=False, penalty=penalty
+                    room_id=rec.id, room=None, alert=result.alert,
+                    left_user=user_id, changed=False, penalty=penalty
                 )
             self._record_history(db, rec, room)
             if room.phase == "final":
@@ -420,7 +523,7 @@ class RoomService:
             rec = self._lock(db, member.room_id)
             if rec is None:
                 raise RoomError("Комната больше не существует")
-            room = self._room(rec)
+            room = self._room(db, rec)
             room.say(user_id, text, self._clock())
             self._store(rec, room, player_activity=True)
             return Update(room_id=rec.id, room=room)
@@ -442,7 +545,7 @@ class RoomService:
             rec = self._lock(db, room_id)
             if rec is None:
                 return None
-            room = self._room(rec)
+            room = self._room(db, rec)
             changed = room.tick(self._clock())
             self._record_history(db, rec, room)
             self._store(rec, room)
@@ -453,7 +556,7 @@ class RoomService:
             rec = self._lock(db, room_id)
             if rec is None:
                 return
-            room = self._room(rec)
+            room = self._room(db, rec)
             for player in room.players:
                 if player["id"] == user_id:
                     player["panel"] = message_id

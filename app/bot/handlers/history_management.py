@@ -1,4 +1,5 @@
-from app.database.worker import run_db
+from html import escape
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -6,16 +7,19 @@ from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.reply import ALL_BUTTONS
 from app.bot.keyboards.menu import back_menu
+from app.bot.history_view import ROLE_TEXT, fmt_dt, outcome_text
 from app.bot.tracker import ScreenTracker
 from app.bot.ui import present, safe_answer
 from app.core.config import Settings
 from app.core.security import is_admin
+from app.database.worker import run_db
 from app.game.session import Screen
 from app.services.admin_service import AdminError, AdminService
 from app.services.history_service import HistoryService
 from app.services.history_admin_service import HistoryAdminService
 from app.services.pack_service import PackError, PackService
 from app.services.penalty import describe_ban
+from app.services.settings_service import SettingsService
 
 router = Router()
 
@@ -32,13 +36,26 @@ def _back(rid):
     return [("К раунду", f"hist:rd:{rid}")]
 
 
-def _round_screen(detail):
+def _round_screen(detail, tz_minutes, back):
     rid = detail["id"]
-    players = "\n".join(f"{name}: {score:+d}" for _, name, score, _ in detail["players"])
+    players = "\n".join(
+        f"{escape(name)} · {ROLE_TEXT[role]} · <b>{score:+d}</b> оч."
+        for _, name, score, role in detail["players"]
+    )
     pack = detail["pack_title"] or detail["theme"]
     rows = [[(name[:50], f"hist:player:{rid}:{uid}")] for uid, name, _, _ in detail["players"]]
-    rows += [[(f"Набор: {pack}"[:60], f"hist:pack:{rid}")], [("К играм лобби", f"hist:lr:{detail['session_id']}:0")], [("Закрыть", "menu:home")]]
-    return Screen(f"Раунд {detail['round_no']}\n\nНабор: {pack}\nСлово: {detail['word']}\n\nИгроки и очки:\n{players}\n\nНажмите имя игрока или набор, чтобы открыть карточку.", rows)
+    rows.insert(0, [(f"Набор: {pack}"[:60], f"hist:pack:{rid}")])
+    rows.append([back])
+    if back[0] == "К моим играм":
+        rows.append([("К раундам лобби", f"hist:lr:{detail['session_id']}:0")])
+    return Screen(
+        f"<b>Раунд {detail['round_no']}</b> · {fmt_dt(detail['finished_at'], tz_minutes)}\n\n"
+        f"Набор: <b>{escape(pack)}</b>\nСлово: <b>{escape(detail['word'])}</b>\n"
+        f"Шпион: {escape(detail['spy_name'])}\n"
+        f"Итог: {escape(outcome_text(detail['outcome'], detail['spy_name']))}\n\n"
+        f"<b>Игроки и очки</b>\n{players}",
+        rows, html=True,
+    )
 
 
 def _player_screen(detail, target, admin, privileged, settings, actor):
@@ -89,21 +106,35 @@ async def _show(call, screen):
 
 
 @router.callback_query(F.data.startswith("hist:rd:"))
-async def on_round(call: CallbackQuery, history: HistoryService, state: FSMContext):
-    await state.clear()
+async def on_round(call: CallbackQuery, history: HistoryService, user_settings: SettingsService, state: FSMContext):
+    await state.set_state(None)
+    parts = call.data.split(":")
     try:
-        detail = (await run_db(history.round_detail, call.from_user.id, int(call.data.split(":")[2])))
+        detail = await run_db(history.round_detail, call.from_user.id, int(parts[2]))
     except (ValueError, IndexError):
         detail = None
     if detail is None:
         return await safe_answer(call, "Раунд недоступен", show_alert=True)
-    await _show(call, _round_screen(detail))
+    from app.bot.handlers.history import _int
+    context = parts[3:]
+    if len(context) == 3 and context[0] == "l":
+        page, list_page = _int(context[1]), _int(context[2])
+        back = ("К раундам лобби", f"hist:lr:{detail['session_id']}:{page}:{list_page}")
+    else:
+        page = _int(context[1]) if len(context) == 2 and context[0] == "g" else 0
+        back = ("К моим играм", f"hist:games:{page}")
+    saved = await state.get_data()
+    if not context and saved.get("history_round") == detail["id"]:
+        back = saved["history_back"]
+    await state.set_data({"history_round": detail["id"], "history_back": back})
+    tz = await run_db(user_settings.tz_minutes, call.from_user.id)
+    await _show(call, _round_screen(detail, tz, back))
 
 
 @router.callback_query(F.data.startswith("hist:sp:"))
 @router.callback_query(F.data.startswith("hist:player:"))
 async def on_player(call: CallbackQuery, history: HistoryService, factory, settings: Settings, state: FSMContext):
-    await state.clear()
+    await state.set_state(None)
     try:
         _, kind, context, target = call.data.split(":")
         rid = (await run_db(history.player_round, call.from_user.id, int(context), int(target))) if kind == "sp" else int(context)
@@ -118,7 +149,7 @@ async def on_player(call: CallbackQuery, history: HistoryService, factory, setti
 
 @router.callback_query(F.data.startswith("hist:pack:"))
 async def on_pack(call: CallbackQuery, history: HistoryService, factory, settings: Settings, packs: PackService, state: FSMContext):
-    await state.clear()
+    await state.set_state(None)
     try:
         detail = (await run_db(history.round_detail, call.from_user.id, int(call.data.split(":")[2])))
     except (ValueError, IndexError):

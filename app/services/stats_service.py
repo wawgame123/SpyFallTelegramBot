@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Float, case, cast, func, select
 from sqlalchemy.orm import sessionmaker
@@ -7,6 +8,7 @@ from app.database.models import GameSession, MatchRound, RoundPlayer, SessionPla
 
 MIN_GAMES_FOR_RATE = 5
 SORTS = ("points", "wins", "spy", "rate")
+PERIOD_DAYS = {"all": None, "week": 7, "month": 30}
 
 
 @dataclass
@@ -35,6 +37,7 @@ class RatingRow:
     games: int
     wins: int
     spy_wins: int
+    place: int = 0
 
     @property
     def win_rate(self) -> float:
@@ -101,36 +104,51 @@ class StatsService:
             )
 
     def leaderboard(self, sort: str = "points", limit: int = 10) -> list[RatingRow]:
+        return self.rating(sort, limit=limit)[0]
+
+    def rating(
+        self, sort: str = "points", period: str = "all", viewer_id: int | None = None,
+        *, limit: int = 10,
+    ) -> tuple[list[RatingRow], RatingRow | None]:
         if sort not in SORTS:
             sort = "points"
         points = func.sum(RoundPlayer.score_delta)
         games = func.count()
         wins = _wins()
         spy_wins = _spy_wins()
+        user = RoundPlayer.user_id
+        if sort == "points":
+            order = (points.desc(), wins.desc(), user)
+        elif sort == "wins":
+            order = (wins.desc(), points.desc(), user)
+        elif sort == "spy":
+            order = (spy_wins.desc(), points.desc(), user)
+        else:
+            rate = cast(wins, Float) / cast(games, Float)
+            order = (rate.desc(), games.desc(), user)
         stmt = _real_rounds(
             select(
-                RoundPlayer.user_id,
+                user,
                 func.max(RoundPlayer.name),
                 points,
                 games,
                 wins,
                 spy_wins,
+                func.row_number().over(order_by=order).label("place"),
             )
-        ).group_by(RoundPlayer.user_id)
-        if sort == "points":
-            stmt = stmt.order_by(points.desc(), wins.desc(), RoundPlayer.user_id)
-        elif sort == "wins":
-            stmt = stmt.order_by(wins.desc(), points.desc(), RoundPlayer.user_id)
-        elif sort == "spy":
-            stmt = stmt.order_by(spy_wins.desc(), points.desc(), RoundPlayer.user_id)
-        else:
-            rate = cast(wins, Float) / cast(games, Float)
-            stmt = (
-                stmt.having(games >= MIN_GAMES_FOR_RATE)
-                .order_by(rate.desc(), games.desc(), RoundPlayer.user_id)
-            )
+        ).group_by(user)
+        days = PERIOD_DAYS.get(period)
+        if days:
+            now = datetime.now(timezone.utc)
+            stmt = stmt.where(MatchRound.finished_at.between(now - timedelta(days=days), now))
+        if sort == "rate":
+            stmt = stmt.having(games >= MIN_GAMES_FOR_RATE)
+        ranked = stmt.subquery()
+        query = select(ranked).where(ranked.c.place <= limit)
+        if viewer_id is not None:
+            query = select(ranked).where((ranked.c.place <= limit) | (ranked.c.user_id == viewer_id))
         with self._factory() as db:
-            return [
+            rows = [
                 RatingRow(
                     user_id=row[0],
                     name=row[1] or "Игрок",
@@ -138,6 +156,8 @@ class StatsService:
                     games=row[3],
                     wins=int(row[4] or 0),
                     spy_wins=int(row[5] or 0),
+                    place=row[6],
                 )
-                for row in db.execute(stmt.limit(limit))
+                for row in db.execute(query.order_by(ranked.c.place))
             ]
+        return [r for r in rows if r.place <= limit], next((r for r in rows if r.place > limit), None)

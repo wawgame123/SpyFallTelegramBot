@@ -60,7 +60,10 @@ class BanRow:
 
     @property
     def reason_text(self) -> str:
-        return "администратор" if self.reason == "admin" else "выход из игры"
+        return {
+            "admin": "администратор",
+            "early_guess": "ранние попытки угадать слово",
+        }.get(self.reason, "выход из игры")
 
 
 @dataclass
@@ -113,12 +116,15 @@ class AdminService:
             row = db.get(UserPenalty, user_id)
             if row is None:
                 return False
-            had = row.banned_until > self._clock() or (reset_strikes and row.strikes > 0)
+            had = row.banned_until > self._clock() or (
+                reset_strikes and (row.strikes > 0 or bool(row.early_guess_warnings))
+            )
             row.banned_until = 0.0
             row.reason = "leave"
             if reset_strikes:
                 row.strikes = 0
                 row.last_leave_at = 0.0
+                row.early_guess_warnings = []
             return had
 
     def list_bans(self) -> list[BanRow]:

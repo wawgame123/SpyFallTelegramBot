@@ -17,7 +17,7 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 
 from app.bot.ui import delete_quietly
 from app.bot.confirmations import LeaveConfirmations
-from app.game.room import Room
+from app.game.room import COUNTDOWN_INTERVAL, Room
 from app.game.session import Screen
 from app.services.room_service import RoomService
 
@@ -222,7 +222,7 @@ class OnlineRuntime:
                 if update and update.changed:
                     await self.refresh(room_id)
 
-    async def countdown(self, now: float | None = None, every: float = 10.0) -> int:
+    async def countdown(self, now: float | None = None, every: float = COUNTDOWN_INTERVAL) -> int:
         current = time.monotonic() if now is None else now
         active = (await run_db(self.service.active_room_ids))
         self._last_refresh = {k: v for k, v in self._last_refresh.items() if k in active}
@@ -239,7 +239,7 @@ class OnlineRuntime:
     async def run_ticker(self) -> None:
         purge_at = 0.0
         while True:
-            await asyncio.sleep(3)
+            await asyncio.sleep(COUNTDOWN_INTERVAL / 2)
             try:
                 await self.tick()
                 await self.countdown()
