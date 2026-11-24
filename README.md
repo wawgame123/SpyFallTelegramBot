@@ -160,3 +160,20 @@ docker compose up -d --force-recreate bot
 ```
 
 На запрос пароля MySQL введите значение `MYSQL_PASSWORD` из `.env`.
+
+## Тесты
+
+В папке [tests](tests/) находятся тесты игровых правил, комнат, рейтинга,
+истории, наборов слов, миграций и обработчиков бота. Тесты используют
+временную SQLite и имитацию Telegram. Для них не нужен реальный токен,
+доступ к Telegram или запущенная MySQL.
+
+В PowerShell из папки проекта после создания окружения `venv`:
+
+```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements-test.txt
+.\venv\Scripts\python.exe -m pytest -q
+```
+
+[GitHub Actions](.github/workflows/tests.yml) запускает тесты на Python 3.12
+и 3.14 при каждом пуше и открытии или обновлении pull request.
