@@ -52,7 +52,7 @@ STARTER_ITEMS = {
 }
 
 POSITION_LIMITS = {
-    "hat": {"arc": (-65, 65)},
+    "hat": {"arc": (-65, 65), "lift": (-6, 6)},
     "face": {"x": (-42, 42), "y": (-42, 42)},
 }
 COMMON_LIMITS = {"rotation": (-180, 180), "scale": (50, 150)}
@@ -63,7 +63,11 @@ def validate_placement(look, placement):
         raise web.HTTPBadRequest(text="Неверное положение украшений")
     for slot, pose in placement.items():
         limits = {**POSITION_LIMITS[slot], **COMMON_LIMITS}
-        if not look[slot] or not isinstance(pose, dict) or pose.keys() != limits.keys() | {"mirror"}:
+        if not look[slot] or not isinstance(pose, dict):
+            raise web.HTTPBadRequest(text="Неверное положение украшений")
+        if slot == "hat":
+            pose = {"lift": 0, **pose}
+        if pose.keys() != limits.keys() | {"mirror"}:
             raise web.HTTPBadRequest(text="Неверное положение украшений")
         if type(pose["mirror"]) is not bool or any(
             type(pose[key]) is not int or not low <= pose[key] <= high for key, (low, high) in limits.items()

@@ -34,14 +34,14 @@ export function Status({id, message, error, className = "empty"}) {
   return <p id={id} className={className + (error ? " error" : "")} role="status" hidden={!message}>{message}</p>;
 }
 
-export function Dialog({id, label, onClose, children}) {
+export function Dialog({id, label, onClose, children, className}) {
   const ref = useRef(null);
   useEffect(() => {
     const dialog = ref.current;
     dialog.showModal();
     return () => dialog.close();
   }, []);
-  return <dialog id={id} ref={ref} aria-labelledby={label}
+  return <dialog id={id} ref={ref} aria-labelledby={label} className={className}
     onCancel={(event) => { event.preventDefault(); onClose(); }}>{children}</dialog>;
 }
 

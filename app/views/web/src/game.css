@@ -724,6 +724,11 @@ dialog label span { color: var(--muted); font-weight: 400; }
   padding: clamp(.9rem, 4vw, 1.4rem);
   border-radius: 2rem;
 }
+#profile-dialog.profile-editor[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .profile-top {
   display: flex;
   align-items: center;
@@ -739,12 +744,14 @@ dialog label span { color: var(--muted); font-weight: 400; }
 #profile-close { position: absolute; top: clamp(1.3rem, 5vw, 1.85rem); right: clamp(1.3rem, 5vw, 1.85rem); width: 44px; padding: 0; font-size: 1.35rem; }
 .profile-cosmetics { margin-bottom: .8rem; }
 #profile-title.cosmetics-title {
+  flex: none;
+  min-height: 34px;
   margin: .55rem 3rem .9rem .15rem;
   color: var(--ink);
   font: 750 clamp(1.35rem, 5vw, 1.9rem)/1.15 var(--display);
 }
 .cosmetic-stage {
-  --studio-avatar: clamp(72px, 24vw, 112px);
+  --studio-avatar: clamp(62px, 20vw, 110px);
   --studio-center: 72%;
   position: relative;
   height: clamp(226px, 66vw, 322px);
@@ -783,16 +790,37 @@ dialog label span { color: var(--muted); font-weight: 400; }
   outline-offset: -1px;
 }
 .cosmetic-tabs, .cosmetic-tool-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
-.cosmetic-tabs { grid-template-columns: 1fr 1fr .66fr; }
-.cosmetic-tabs button, .cosmetic-tool-buttons button { padding-inline: .5rem; }
-.cosmetic-tools {
-  display: grid;
-  gap: .35rem;
+.cosmetic-tabs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .66fr); }
+.cosmetic-tabs button, .cosmetic-tool-buttons button { min-width: 0; padding-inline: .5rem; overflow-wrap: anywhere; }
+.cosmetic-properties {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--soft);
-  padding: .55rem .7rem;
 }
+.cosmetic-properties summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem;
+  min-height: 44px;
+  padding: .45rem .7rem;
+  border-radius: inherit;
+  font-weight: 700;
+  list-style: none;
+}
+.cosmetic-properties summary::-webkit-details-marker { display: none; }
+.cosmetic-properties summary::after {
+  content: "";
+  width: .48rem;
+  height: .48rem;
+  margin-inline-end: .15rem;
+  border: solid var(--accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translateY(-2px);
+}
+.cosmetic-properties[open] summary::after { transform: rotate(225deg) translateY(-2px); }
+.cosmetic-tools { display: grid; gap: .35rem; padding: .15rem .7rem .55rem; }
 .cosmetic-axes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .cosmetic-range { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 .4rem; font-size: .82rem; }
 .cosmetic-range output { color: var(--active); font-variant-numeric: tabular-nums; }
@@ -849,14 +877,31 @@ dialog label span { color: var(--muted); font-weight: 400; }
   border-radius: 50%;
   background: linear-gradient(135deg, transparent 45%, var(--muted) 47% 53%, transparent 55%);
 }
-.cosmetics-editor .dialog-buttons {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  padding-block: .5rem;
-  border-top: 1px solid var(--line);
-  background: var(--surface);
+.profile-editor .cosmetics-editor {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
 }
+.cosmetic-editor-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: .65rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: .5rem;
+  scrollbar-gutter: stable;
+  padding: .2rem .45rem .55rem .15rem;
+}
+.cosmetic-editor-footer {
+  display: grid;
+  gap: .35rem;
+  padding-top: .6rem;
+  border-top: 1px solid var(--line);
+}
+.cosmetic-editor-footer .dialog-buttons { flex-wrap: nowrap; gap: .45rem; }
+.cosmetic-editor-footer button { min-width: 0; padding-inline: .7rem; }
 .profile-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

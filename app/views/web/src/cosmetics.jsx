@@ -1,5 +1,5 @@
 import {useRef, useState} from "react";
-import {clampArc, constrainFace, limits, poseFor} from "./avatar-placement";
+import {clampArc, clampHatLift, constrainFace, limits, poseFor} from "./avatar-placement";
 import {api, useResource} from "./client";
 import {accessoryUrl, Avatar, Status, useSite, useTask} from "./ui";
 
@@ -37,24 +37,33 @@ function PoseRange({label, value, min, max, unit = "", onChange}) {
 
 function PlacementControls({slot, pose, change, reset}) {
   const set = (key) => (value) => change({[key]: value});
-  return <div className="cosmetic-tools" aria-label="Положение украшения">
-    {slot === "hat" ? <PoseRange label="По дуге" value={pose.arc} min={-limits.arc} max={limits.arc}
-      unit="°" onChange={set("arc")}/> : <div className="cosmetic-axes">
-      <PoseRange label="Влево / вправо" value={pose.x} min={-limits.radius} max={limits.radius} onChange={set("x")}/>
-      <PoseRange label="Вверх / вниз" value={pose.y} min={-limits.radius} max={limits.radius} onChange={set("y")}/>
-    </div>}
-    <div className="cosmetic-axes">
-      <PoseRange label="Поворот" value={pose.rotation} min={-limits.rotation} max={limits.rotation} unit="°"
-        onChange={set("rotation")}/>
-      <PoseRange label="Размер" value={pose.scale} min={limits.minScale} max={limits.maxScale} unit="%"
-        onChange={set("scale")}/>
+  return <details className="cosmetic-properties">
+    <summary>Свойства</summary>
+    <div className="cosmetic-tools">
+      <div className="cosmetic-axes">
+        {slot === "hat" ? <>
+          <PoseRange label="По дуге" value={pose.arc} min={-limits.arc} max={limits.arc}
+            unit="°" onChange={set("arc")}/>
+          <PoseRange label="Высота" value={pose.lift} min={-limits.hatLift} max={limits.hatLift}
+            unit="%" onChange={set("lift")}/>
+        </> : <>
+          <PoseRange label="Влево / вправо" value={pose.x} min={-limits.radius} max={limits.radius} onChange={set("x")}/>
+          <PoseRange label="Вверх / вниз" value={pose.y} min={-limits.radius} max={limits.radius} onChange={set("y")}/>
+        </>}
+      </div>
+      <div className="cosmetic-axes">
+        <PoseRange label="Поворот" value={pose.rotation} min={-limits.rotation} max={limits.rotation} unit="°"
+          onChange={set("rotation")}/>
+        <PoseRange label="Размер" value={pose.scale} min={limits.minScale} max={limits.maxScale} unit="%"
+          onChange={set("scale")}/>
+      </div>
+      <div className="cosmetic-tool-buttons">
+        <button type="button" className="secondary" aria-pressed={pose.mirror}
+          onClick={() => change({mirror: !pose.mirror})}>Отразить</button>
+        <button type="button" className="quiet" onClick={reset}>Сбросить положение</button>
+      </div>
     </div>
-    <div className="cosmetic-tool-buttons">
-      <button type="button" className="secondary" aria-pressed={pose.mirror}
-        onClick={() => change({mirror: !pose.mirror})}>Отразить</button>
-      <button type="button" className="quiet" onClick={reset}>Сбросить положение</button>
-    </div>
-  </div>;
+  </details>;
 }
 
 function pointerPosition(event, bounds) {
@@ -124,7 +133,8 @@ export function CosmeticsEditor({player, close}) {
     const now = pointerPosition(event, bounds);
     if (active === "hat") {
       const arc = Math.round(original.arc + angleFromTop(now) - angleFromTop(point));
-      changePose(active, {arc: clampArc(arc)});
+      const lift = Math.round(original.lift + Math.hypot(now.x, now.y) - Math.hypot(point.x, point.y));
+      changePose(active, {arc: clampArc(arc), lift: clampHatLift(lift)});
     } else {
       changePose(active, {
         x: Math.round(original.x + now.x - point.x),
@@ -149,25 +159,29 @@ export function CosmeticsEditor({player, close}) {
   }
 
   return <form className="cosmetics-editor" onSubmit={submit}>
-    <div className="cosmetic-stage" data-editing={slot} data-outfit={draft.outfit ? "true" : undefined}>
-      <div className="cosmetic-orbit" aria-hidden="true"/>
-      <Avatar name={player.name} image={player.avatar} cosmetics={draft}
-        className="avatar cosmetic-preview-avatar" avatarRef={preview} activeSlot={slot}
-        dragHandlers={{onPointerDown: startDrag, onPointerMove: moveDrag, onPointerUp: endDrag,
-          onPointerCancel: endDrag, onLostPointerCapture: endDrag}}/>
+    <div className="cosmetic-editor-body">
+      <div className="cosmetic-stage" data-editing={slot} data-outfit={draft.outfit ? "true" : undefined}>
+        <div className="cosmetic-orbit" aria-hidden="true"/>
+        <Avatar name={player.name} image={player.avatar} cosmetics={draft}
+          className="avatar cosmetic-preview-avatar" avatarRef={preview} activeSlot={slot}
+          dragHandlers={{onPointerDown: startDrag, onPointerMove: moveDrag, onPointerUp: endDrag,
+            onPointerCancel: endDrag, onLostPointerCapture: endDrag}}/>
+      </div>
+      <div className="cosmetic-tabs" role="group" aria-label="Категория украшений">
+        {Object.entries(slots).map(([key, option]) => <button key={key} type="button" className="secondary"
+          aria-pressed={slot === key} onClick={() => setSlot(key)}>{option.title}</button>)}
+      </div>
+      {slot !== "outfit" && !!draft[slot] && <PlacementControls slot={slot} pose={pose}
+        change={(values) => changePose(slot, values)} reset={resetPose}/>}
+      <Status className="field-hint" error={error} message={error || (!data ? "Загружаем украшения…" : "")}/>
+      {data?.[slot] && <CosmeticOptions key={slot} slot={slot} items={data[slot]} value={draft[slot]} onChange={choose}/>}
     </div>
-    <div className="cosmetic-tabs" role="group" aria-label="Категория украшений">
-      {Object.entries(slots).map(([key, option]) => <button key={key} type="button" className="secondary"
-        aria-pressed={slot === key} onClick={() => setSlot(key)}>{option.title}</button>)}
-    </div>
-    {slot !== "outfit" && !!draft[slot] && <PlacementControls slot={slot} pose={pose}
-      change={(values) => changePose(slot, values)} reset={resetPose}/>}
-    <Status className="field-hint" error={error} message={error || (!data ? "Загружаем украшения…" : "")}/>
-    {data?.[slot] && <CosmeticOptions key={slot} slot={slot} items={data[slot]} value={draft[slot]} onChange={choose}/>}
-    <Status className="field-hint" error={saveError} message={saveError}/>
-    <div className="dialog-buttons">
-      <button type="button" className="quiet" disabled={busy} onClick={close}>Назад к профилю</button>
-      <button type="submit" className="primary" disabled={!data || !changed || busy}>Сохранить</button>
+    <div className="cosmetic-editor-footer">
+      <Status className="field-hint" error={saveError} message={saveError}/>
+      <div className="dialog-buttons">
+        <button type="button" className="quiet" disabled={busy} onClick={close}>Назад к профилю</button>
+        <button type="submit" className="primary" disabled={!data || !changed || busy}>Сохранить</button>
+      </div>
     </div>
   </form>;
 }

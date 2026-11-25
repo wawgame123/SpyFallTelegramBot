@@ -1,7 +1,7 @@
-export const limits = {arc: 65, radius: 42, rotation: 180, minScale: 50, maxScale: 150};
+export const limits = {arc: 65, hatLift: 6, radius: 42, rotation: 180, minScale: 50, maxScale: 150};
 
 const defaults = {
-  hat: {arc: 0, rotation: 0, scale: 100, mirror: false},
+  hat: {arc: 0, lift: 0, rotation: 0, scale: 100, mirror: false},
   face: {x: 0, y: 14, rotation: 0, scale: 100, mirror: false},
 };
 
@@ -17,6 +17,7 @@ export function constrainFace(x, y) {
 }
 
 export const clampArc = (angle) => Math.min(limits.arc, Math.max(-limits.arc, angle));
+export const clampHatLift = (lift) => Math.min(limits.hatLift, Math.max(-limits.hatLift, lift));
 const radians = (degrees) => degrees * Math.PI / 180;
 
 export function accessoryGeometry(slot, pose) {
@@ -32,7 +33,7 @@ export function accessoryGeometry(slot, pose) {
     const roll = radians(pose.rotation);
     // Keep the entire rotated rectangle outside a tangent to the photo.
     const depth = (Math.abs(Math.sin(roll)) * width + Math.abs(Math.cos(roll)) * height) / 2;
-    const radius = 0.51 + depth;
+    const radius = 0.51 + depth + (limits.hatLift + pose.lift) / 100;
     x = 0.5 + Math.sin(arc) * radius;
     y = 0.5 - Math.cos(arc) * radius;
   }

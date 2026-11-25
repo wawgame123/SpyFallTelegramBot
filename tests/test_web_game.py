@@ -342,8 +342,12 @@ def test_avatar_cosmetics_are_free_persistent_and_visible_in_the_lobby(env):
             assert (await browser.post("/api/cosmetics", headers=owner, json=moved)).status == 200
             current = (await (await browser.get("/api/room", headers=guest)).json())["room"]
             assert current["lobby"]["players"][0]["cosmetics"] == moved
+            placement["hat"]["lift"] = -5
+            assert (await browser.post("/api/cosmetics", headers=owner, json=moved)).status == 200
+            assert (await game.cosmetics.equipped([42]))[42] == moved
             invalid_positions = [
                 ("hat", {"arc": 90}), ("hat", {"rotation": 181}), ("hat", {"scale": 300}),
+                ("hat", {"lift": 7}),
                 ("face", {"x": 42, "y": 42}), ("face", {"mirror": 1}),
             ]
             for slot, changes in invalid_positions:

@@ -68,7 +68,7 @@ export function Profile({close}) {
     requestAnimationFrame(() => editButton.current?.focus());
   }
 
-  return <Dialog id="profile-dialog" label="profile-title" onClose={close}>
+  return <Dialog id="profile-dialog" label="profile-title" onClose={close} className={editing ? "profile-editor" : undefined}>
     {editing ? <>
       <h2 id="profile-title" ref={editorTitle} tabIndex={-1} className="cosmetics-title">Украшения аватара</h2>
       <CosmeticsEditor player={player} close={backToProfile}/>
