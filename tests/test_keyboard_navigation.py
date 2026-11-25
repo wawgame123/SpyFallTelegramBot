@@ -2,7 +2,7 @@ from aiogram.methods import DeleteMessage, EditMessageText, SendMessage
 from aiogram.types import ReplyKeyboardMarkup
 import pytest
 
-from app.bot.middlewares.navigation import KeepMenuMiddleware
+from app.controllers.telegram.middlewares.navigation import KeepMenuMiddleware
 from tests.test_bot_flow import Env, run
 
 
@@ -128,7 +128,7 @@ def test_old_room_action_after_restart_restores_keyboard(env):
 
 
 def test_style_switches_refresh_bottom_keyboard_immediately(env):
-    from app.bot.emoji import ButtonStyleMiddleware
+    from app.controllers.telegram.middlewares.button_style import ButtonStyleMiddleware
     env.bot.session.middleware(ButtonStyleMiddleware(env.user_settings.prefs))
     async def scenario():
         await env.text(1, "/start")
@@ -168,13 +168,13 @@ def test_style_switches_refresh_bottom_keyboard_immediately(env):
 
 
 def test_style_refresh_keeps_admin_button(env):
-    from app.bot.emoji import ButtonStyleMiddleware
+    from app.controllers.telegram.middlewares.button_style import ButtonStyleMiddleware
     env.bot.session.middleware(ButtonStyleMiddleware(env.user_settings.prefs))
     async def scenario():
-        await env.text(1, "/start", username="ExampleAdmin")
-        await env.text(1, "Настройки", username="ExampleAdmin")
+        await env.text(1, "/start", username="WAWGAME")
+        await env.text(1, "Настройки", username="WAWGAME")
         screen = env.tracker.get(1)
-        await env.press(1, "set:colors:1", username="ExampleAdmin", message_id=screen)
+        await env.press(1, "set:colors:1", username="WAWGAME", message_id=screen)
         labels = [b.text for row in env.session.of(SendMessage)[-2].reply_markup.keyboard for b in row]
         assert "Админ" in labels
         await env.text(2, "/start", username="guest")
@@ -205,7 +205,7 @@ def test_old_settings_callback_cannot_reclaim_new_card(env):
 
 
 def test_keyboard_carrier_id_is_saved_across_restart(tmp_path):
-    from app.bot.tracker import ScreenTracker
+    from app.views.telegram.tracker import ScreenTracker
     path = tmp_path / "anchors.json"
     tracker = ScreenTracker(path)
     tracker.set_anchor(1, 100)

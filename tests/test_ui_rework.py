@@ -5,14 +5,14 @@ import random
 import pytest
 from aiogram.methods import DeleteMessage, EditMessageText, SendMessage
 
-from app.bot import settings_view
-from app.bot.middlewares.track import TrackScreensMiddleware
-from app.bot.tracker import ScreenTracker
-from app.game.packs import Pack, PackLibrary
-from app.game.room import RoomError
-from app.game.session import LocalSession
-from app.database.session import make_session_factory
-from app.services.room_service import RoomService
+from app.views.telegram import settings_view
+from app.controllers.telegram.middlewares.track import TrackScreensMiddleware
+from app.views.telegram.tracker import ScreenTracker
+from app.models.game.packs import Pack, PackLibrary
+from app.models.game.room import RoomError
+from app.models.game.session import LocalSession
+from app.models.database.session import make_session_factory
+from app.models.services.room_service import RoomService
 from tests.test_bot_flow import Env, run
 
 
@@ -161,7 +161,7 @@ def test_timezone_is_a_separate_settings_submenu(env):
 def test_deeplink_without_join_falls_through_to_start_menu(env):
     run(env.text(6, "/start whatever"))
     last = env.session.of(SendMessage)[-1]
-    assert last.text == __import__("app.bot.keyboards.menu", fromlist=["MENU_TEXT"]).MENU_TEXT and last.reply_markup is not None
+    assert last.text == __import__("app.views.telegram.keyboards.menu", fromlist=["MENU_TEXT"]).MENU_TEXT and last.reply_markup is not None
 
 
 def make_service(tmp_path, library=None):

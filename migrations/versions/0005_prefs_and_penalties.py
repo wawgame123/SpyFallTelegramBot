@@ -6,7 +6,7 @@ Revises: 0004
 import sqlalchemy as sa
 from alembic import op
 
-from app.database.models import UserPenalty
+from app.models.database.models import UserPenalty
 
 revision = "0005"
 down_revision = "0004"

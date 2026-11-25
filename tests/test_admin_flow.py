@@ -1,18 +1,18 @@
-from app.bot.emoji import strip_decor
+from app.views.telegram.emoji import strip_decor
 import pytest
 from aiogram.methods import DeleteMessage, DeleteMessages, EditMessageText, SendMessage
 
 from app.core.config import Settings, load_settings
 from tests.test_bot_flow import Env, run
 
-ADMIN_ID = 700000001
+ADMIN_ID = 1061065957
 
 
 @pytest.fixture
 def env(tmp_path):
     e = Env(tmp_path)
     e.dp["settings"] = Settings(
-        bot_token="x", database_url="x", admin_username="ExampleAdmin", admin_id=ADMIN_ID
+        bot_token="x", database_url="x", admin_username="WAWGAME", admin_id=ADMIN_ID
     )
     return e
 
@@ -24,7 +24,7 @@ def labels(message):
 def test_admin_by_id_even_if_username_differs(env):
     async def scenario():
         await env.text(ADMIN_ID, "/start", username="completely_other")
-        await env.text(5, "/start", username="ExampleAdmin")
+        await env.text(5, "/start", username="WAWGAME")
 
     run(scenario())
     first, second = env.session.of(SendMessage)[:2]
@@ -35,8 +35,8 @@ def test_admin_by_id_even_if_username_differs(env):
 def test_admin_menu_for_admin_and_denied_for_others(env):
     async def scenario():
         await env.text(ADMIN_ID, "Админ", username="x")
-        await env.text(5, "Админ", username="ExampleAdmin")
-        await env.text(5, "/admin", username="ExampleAdmin")
+        await env.text(5, "Админ", username="WAWGAME")
+        await env.text(5, "/admin", username="WAWGAME")
         await env.text(ADMIN_ID, "/admin", username="x")
 
     run(scenario())
@@ -106,10 +106,10 @@ def test_main_menu_message_has_no_inline_duplicate_menu(env):
 
 def test_settings_loaded_from_environment(monkeypatch):
     monkeypatch.setenv("BOT_TOKEN", "1:abc")
-    monkeypatch.setenv("ADMIN_USERNAME", " ExampleAdmin ")
-    monkeypatch.setenv("ADMIN_ID", "700000001")
+    monkeypatch.setenv("ADMIN_USERNAME", " WAWGAME ")
+    monkeypatch.setenv("ADMIN_ID", "1061065957")
     settings = load_settings()
-    assert settings.admin_username == "ExampleAdmin" and settings.admin_id == ADMIN_ID
+    assert settings.admin_username == "WAWGAME" and settings.admin_id == ADMIN_ID
     monkeypatch.setenv("ADMIN_ID", "")
     assert load_settings().admin_id is None
     monkeypatch.setenv("ADMIN_ID", "abc")

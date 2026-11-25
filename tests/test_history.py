@@ -6,21 +6,21 @@ import re
 import pytest
 from sqlalchemy import func, select
 
-from app.bot import history_view as view
-from app.bot.keyboards.menu import (
+from app.views.telegram import history_view as view
+from app.views.telegram.keyboards.menu import (
     ONLINE_TEXT,
     RULES_TEXT,
     admin_lobby_menu,
     local_choice_menu,
     online_menu,
 )
-from app.database.models import GameSession, MatchRound, RoundPlayer
-from app.database.pack_repository import PackRepository
-from app.database.session import make_session_factory
-from app.game.room import RoomError
-from app.game.session import LocalSession
-from app.services.history_service import HistoryService
-from app.services.room_service import RoomService
+from app.models.database.models import GameSession, MatchRound, RoundPlayer
+from app.models.database.pack_repository import PackRepository
+from app.models.database.session import make_session_factory
+from app.models.game.room import RoomError
+from app.models.game.session import LocalSession
+from app.models.services.history_service import HistoryService
+from app.models.services.room_service import RoomService
 from tests.helpers import room_circle, room_guess
 
 EMOJI = re.compile(
@@ -216,7 +216,7 @@ def test_empty_history_screens():
 
 
 def test_base_keyboards_leave_optional_emoji_to_the_styling_layer():
-    from app.bot.emoji import decorate_markup
+    from app.views.telegram.emoji import decorate_markup
     for markup in (online_menu(True), online_menu(False, True), admin_lobby_menu(), local_choice_menu()):
         for row in markup.inline_keyboard:
             for button in row:
@@ -248,7 +248,7 @@ def test_database_pack_titles_are_not_overwritten_automatically(tmp_path):
     factory = make_session_factory(f"sqlite:///{tmp_path}/p.db")
     repo = PackRepository(factory)
     repo.seed(DEFAULT_PACKS)
-    from app.database.models import QuestionPack
+    from app.models.database.models import QuestionPack
 
     with factory.begin() as db:
         pack = db.execute(select(QuestionPack).where(QuestionPack.slug == "animals")).scalar_one()

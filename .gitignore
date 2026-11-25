@@ -24,3 +24,5 @@ __pycache__/
 .bot-health.json
 .bot-health.tmp
 .pytest_cache/
+app/views/web/node_modules/
+app/views/web/dist/

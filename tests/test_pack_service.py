@@ -4,10 +4,10 @@ import random
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
-from app.database.models import GameSession
-from app.database.pack_repository import PackRepository
-from app.database.session import make_session_factory
-from app.services.pack_service import (
+from app.models.database.models import GameSession
+from app.models.database.pack_repository import PackRepository
+from app.models.database.session import make_session_factory
+from app.models.services.pack_service import (
     MAX_USER_PACKS,
     MAX_WORD_LEN,
     MIN_WORDS,
@@ -16,7 +16,7 @@ from app.services.pack_service import (
     PackService,
     split_words,
 )
-from app.services.room_service import RoomService
+from app.models.services.room_service import RoomService
 from tests.helpers import room_circle, room_guess
 
 WORDS = [f"слово{i}" for i in range(12)]

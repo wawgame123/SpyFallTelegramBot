@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock
 
 from aiogram.types import CallbackQuery, Update, User
 
-from app.bot.backlog import replay_pending_updates
-from app.bot.middlewares.throttle import ThrottleMiddleware
+from app.controllers.telegram.backlog import replay_pending_updates
+from app.controllers.telegram.middlewares.throttle import ThrottleMiddleware
 from app.main import poll
 
 
@@ -42,7 +42,7 @@ def test_startup_dispatches_queued_button_before_any_room_tick(tmp_path, monkeyp
     user = SimpleNamespace(id=1)
     button = SimpleNamespace(update_id=42, callback_query=SimpleNamespace(from_user=user))
     bot = SimpleNamespace(session=SimpleNamespace(middleware=Mock(), close=AsyncMock()))
-    runtime = SimpleNamespace()
+    runtime = SimpleNamespace(close=AsyncMock())
     dispatcher = SimpleNamespace(resolve_used_update_types=lambda: ["callback_query"])
     monkeypatch.setattr("app.main.health_path", lambda: tmp_path / "health.json")
     monkeypatch.setattr("app.main.monitor_health", AsyncMock())
@@ -80,7 +80,7 @@ def test_startup_dispatches_queued_button_before_any_room_tick(tmp_path, monkeyp
 
 
 def test_startup_button_passes_throttle_without_changing_live_limits(monkeypatch):
-    monkeypatch.setattr("app.bot.middlewares.throttle.time", SimpleNamespace(monotonic=lambda: 1))
+    monkeypatch.setattr("app.controllers.telegram.middlewares.throttle.time", SimpleNamespace(monotonic=lambda: 1))
     user = User(id=1, is_bot=False, first_name="Player")
     button = CallbackQuery(
         id="42", from_user=user, chat_instance="chat", data="rm:rd:1",
@@ -89,14 +89,14 @@ def test_startup_button_passes_throttle_without_changing_live_limits(monkeypatch
     event = Update(update_id=42, callback_query=button)
     middleware = ThrottleMiddleware()
     handler = AsyncMock()
-    monkeypatch.setattr("app.bot.middlewares.throttle.safe_answer", AsyncMock())
+    monkeypatch.setattr("app.controllers.telegram.middlewares.throttle.safe_answer", AsyncMock())
 
     async def scenario():
         live_data = {"event_from_user": user}
         await middleware(handler, event, {**live_data, "startup_backlog": True})
-        await middleware(handler, event, live_data)
-        await middleware(handler, event, live_data)
+        for _ in range(5):
+            await middleware(handler, event, live_data)
 
     asyncio.run(scenario())
-    assert handler.await_count == 2
+    assert handler.await_count == 5
     assert handler.await_args_list[0].args[1]["startup_backlog"]

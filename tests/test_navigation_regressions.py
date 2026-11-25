@@ -81,7 +81,7 @@ def test_close_old_screen_keeps_current_input(env):
 
 
 def test_settings_disabled_emoji_buttons_are_plain(env):
-    from app.bot.emoji import ButtonStyleMiddleware
+    from app.controllers.telegram.middlewares.button_style import ButtonStyleMiddleware
     env.bot.session.middleware(ButtonStyleMiddleware(env.user_settings.prefs))
     async def scenario():
         await env.text(1, "Настройки")

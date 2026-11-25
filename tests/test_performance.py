@@ -5,10 +5,11 @@ from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.methods import EditMessageText, SendMessage
 from aiogram.types import CallbackQuery, User
 
-from app.bot.runtime import OnlineRuntime
-from app.bot.middlewares.track import TrackScreensMiddleware
-from app.database.models import GameSession, SessionPlayer, MatchRound, RoundPlayer
-from app.services.history_service import HistoryService
+from app.controllers.telegram.runtime import OnlineRuntime
+from app.models.database.worker import run_db
+from app.controllers.telegram.middlewares.track import TrackScreensMiddleware
+from app.models.database.models import GameSession, SessionPlayer, MatchRound, RoundPlayer
+from app.models.services.history_service import HistoryService
 from tests.test_bot_flow import env, run
 
 
@@ -45,6 +46,118 @@ def test_game_callback_has_no_tracking_database_queries(env):
         assert not statements
     finally:
         stop()
+
+
+def test_catalog_query_count_is_independent_of_page_size(env):
+    statements, stop = count_sql(env.packs._factory)
+    try:
+        for size in (1, 6, 8):
+            statements.clear()
+            rows, total = env.packs.list_packs(1, "builtin", size=size, sort="size")
+            assert len(rows) == size and total == 8
+            assert len(statements) == 2
+            assert [row.words_count for row in rows] == [20] * size
+    finally:
+        stop()
+
+
+def test_active_panel_refresh_reads_only_the_saved_room(env):
+    rid = make_panels(env, users=3)
+    for uid in (2, 3):
+        env.service.act(uid, "rd:1")
+    env.service.act(1, "th:animals")
+    env.service.act(1, "start")
+    env.service.act(1, "force")
+    statements, stop = count_sql(env.packs._factory)
+    try:
+        run(env.runtime.refresh(rid))
+        assert len(statements) == 1
+        assert len(env.session.of(EditMessageText)) == 3
+        assert all("Обсуждение" in edit.text for edit in env.session.of(EditMessageText))
+    finally:
+        stop()
+
+
+def test_player_can_change_state_while_previous_panel_edit_is_in_flight(env, monkeypatch):
+    rid = make_panels(env, users=3)
+    original_request = env.session.make_request
+    original_act = env.service.act
+
+    async def scenario():
+        await env.runtime.refresh(rid)
+        editing = asyncio.Event()
+        release = asyncio.Event()
+        third_player_acted = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        async def request(bot, method, timeout=None):
+            if isinstance(method, EditMessageText) and not editing.is_set():
+                editing.set()
+                await release.wait()
+            return await original_request(bot, method, timeout)
+
+        def act(uid, *args, **kwargs):
+            update = original_act(uid, *args, **kwargs)
+            if uid == 3:
+                loop.call_soon_threadsafe(third_player_acted.set)
+            return update
+
+        monkeypatch.setattr(env.session, "make_request", request)
+        monkeypatch.setattr(env.service, "act", act)
+        first = asyncio.create_task(env.press(2, "rm:rd:1", message_id=702))
+        second = None
+        try:
+            await asyncio.wait_for(editing.wait(), 5)
+            second = asyncio.create_task(env.press(3, "rm:rd:1", message_id=703))
+            await asyncio.wait_for(third_player_acted.wait(), 5)
+            room = await run_db(env.service.get, rid)
+            assert all(player["ready"] for player in room.players)
+        finally:
+            release.set()
+            await asyncio.gather(first, *([second] if second else []))
+        host_panels = [edit for edit in env.session.of(EditMessageText) if edit.chat_id == 1]
+        assert "готовы 3/3" in host_panels[-1].text
+
+    run(scenario())
+
+
+def test_timer_advances_again_while_room_panel_delivery_is_stalled(env, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(env.service, "_clock", lambda: clock[0])
+    rid = make_panels(env, users=3)
+    for uid in (2, 3):
+        env.service.act(uid, "rd:1")
+    env.service.act(1, "th:animals")
+    env.service.act(1, "start")
+    initial = env.service.act(1, "force").room
+    original_request = env.session.make_request
+
+    async def scenario():
+        editing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def request(bot, method, timeout=None):
+            if isinstance(method, EditMessageText) and not editing.is_set():
+                editing.set()
+                await release.wait()
+            return await original_request(bot, method, timeout)
+
+        monkeypatch.setattr(env.session, "make_request", request)
+        try:
+            clock[0] += 100
+            await env.runtime.tick(background=True)
+            await asyncio.wait_for(editing.wait(), 5)
+            clock[0] += 100
+            await asyncio.wait_for(env.runtime.tick(background=True), 5)
+            room = await run_db(env.service.get, rid)
+            assert room.round.current() == initial.round.order[2]
+        finally:
+            release.set()
+            await asyncio.wait_for(
+                asyncio.gather(*env.runtime._deliveries.values()), 5,
+            )
+
+    run(scenario())
 
 
 def test_settings_navigation_needs_only_two_identity_queries(env):

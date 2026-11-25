@@ -1,19 +1,15 @@
-from app.bot.emoji import strip_decor
+from app.views.telegram.emoji import strip_decor
 import asyncio
 import itertools
 import time
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 from aiogram import Bot
 from aiogram.methods import EditMessageText, SendMessage
-from sqlalchemy import text
 
-from app.bot.handlers import history, local, menu, online, packs, settings, stats
+from app.controllers.telegram.handlers import history, local, menu, online, packs, settings, stats
 from app.core.config import Settings
-from app.database.session import make_session_factory
-from app.main import build_dispatcher, main
-from scripts.db_check import run as check_db
+from app.models.database.session import make_session_factory
+from app.main import build_dispatcher
 from tests.test_bot_flow import FakeSession
 
 
@@ -50,36 +46,3 @@ def test_build_dispatcher_wires_everything_and_handles_updates(tmp_path):
     assert any(t.startswith("Наборы слов") for t in texts)
     assert any(t.startswith("Профиль") for t in texts)
     assert runtime.service is not None
-
-
-def test_main_initializes_sqlite_with_the_normal_entry_point(tmp_path, monkeypatch):
-    db_path = tmp_path / "spy_game.sqlite3"
-    url = f"sqlite:///{db_path.as_posix()}"
-    monkeypatch.setenv("BOT_TOKEN", "123456:TESTTOKEN")
-    monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setenv("PROXY_URL", "")
-    monkeypatch.setattr("app.main.health_path", lambda: tmp_path / "health.json")
-    monkeypatch.setattr("app.main.start_console_control", lambda: None)
-    mocked_bot = SimpleNamespace(
-        get_me=AsyncMock(return_value=SimpleNamespace(username="testbot")),
-        set_my_commands=AsyncMock(),
-        set_chat_menu_button=AsyncMock(),
-    )
-    monkeypatch.setattr("app.main.Bot", lambda **kwargs: mocked_bot)
-    monkeypatch.setattr("app.main.build_dispatcher", lambda *args, **kwargs: (None, None))
-
-    async def check_startup(bot, dp, runtime, factory):
-        assert bot is mocked_bot
-        try:
-            with factory() as db:
-                assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
-                assert db.scalar(text("SELECT COUNT(*) FROM question_packs")) == 0
-                assert db.scalar(text("PRAGMA foreign_keys")) == 1
-        finally:
-            factory.kw["bind"].dispose()
-
-    fake_poll = AsyncMock(side_effect=check_startup)
-    monkeypatch.setattr("app.main.poll", fake_poll)
-    asyncio.run(main())
-    fake_poll.assert_awaited_once()
-    assert "Файл:" in check_db(url)

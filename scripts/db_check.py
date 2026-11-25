@@ -3,20 +3,18 @@ import sys
 
 from dotenv import load_dotenv
 
-from app.database.info import check_connection, describe, ensure_supported_database, format_info, mask_url
-from app.database.session import make_session_factory
+from app.models.database.info import check_connection, describe, ensure_supported_database, format_info, mask_url
+from app.models.database.session import make_session_factory
 
 DEFAULT_URL = "mysql+pymysql://spy:spy@localhost:3306/spy_game?charset=utf8mb4"
 
 
-def run(url: str) -> str:
-    ensure_supported_database(url)
+def run(url: str, require_mysql: bool = True) -> str:
+    if require_mysql:
+        ensure_supported_database(url)
     check_connection(url)
     factory = make_session_factory(url)
-    try:
-        return f"Подключение: {mask_url(url)}\n\n" + format_info(describe(factory, url))
-    finally:
-        factory.kw["bind"].dispose()
+    return f"Подключение: {mask_url(url)}\n\n" + format_info(describe(factory, url))
 
 
 def main() -> int:

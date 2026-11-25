@@ -2,10 +2,10 @@ import random
 
 import pytest
 
-from app.game.engine import GameError, Phase, Round
-from app.game.roles import build_turn_order, choose_spy
-from app.game.scoring import Outcome, ScoreRules
-from app.game.voting import majority_reached
+from app.models.game.engine import GameError, Phase, Round
+from app.models.game.roles import build_turn_order, choose_spy
+from app.models.game.scoring import Outcome, ScoreRules
+from app.models.game.voting import majority_reached
 
 
 def make_round(spy="d", open_guess=False):

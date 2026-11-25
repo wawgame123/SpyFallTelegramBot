@@ -1,4 +1,4 @@
-from app.bot.emoji import strip_decor
+from app.views.telegram.emoji import strip_decor
 from tests.pack_fixtures import test_library
 import asyncio
 import random
@@ -8,17 +8,17 @@ import pytest
 from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage
 from sqlalchemy import update
 
-from app.bot import settings_view
-from app.bot.history_view import fmt_dt, fmt_short, tz_label
-from app.bot.middlewares.throttle import ThrottleMiddleware
-from app.database.models import LocalGameRecord
-from app.database.repository import LocalGameRepository
-from app.database.session import make_session_factory
-from app.game.packs import Pack, PackLibrary
-from app.game.room import THEMES_PAGE, RoomError
-from app.game.session import LocalSession
-from app.services.room_service import RoomService
-from app.services.settings_service import OFFSETS, SettingsService
+from app.views.telegram import settings_view
+from app.views.telegram.history_view import fmt_dt, fmt_short, tz_label
+from app.controllers.telegram.middlewares.throttle import ThrottleMiddleware
+from app.models.database.models import LocalGameRecord
+from app.models.database.repository import LocalGameRepository
+from app.models.database.session import make_session_factory
+from app.models.game.packs import Pack, PackLibrary
+from app.models.game.room import THEMES_PAGE, RoomError
+from app.models.game.session import LocalSession
+from app.models.services.room_service import RoomService
+from app.models.services.settings_service import OFFSETS, SettingsService
 from tests.test_bot_flow import Env, run  # noqa: F401
 
 
@@ -44,13 +44,13 @@ def test_throttle_blocks_rapid_events_per_user():
             calls.append(event)
             return "ok"
 
-        first = await mw(handler, "e1", {"event_from_user": FakeUser(1)})
-        second = await mw(handler, "e2", {"event_from_user": FakeUser(1)})
-        other = await mw(handler, "e3", {"event_from_user": FakeUser(2)})
-        return first, second, other, calls
+        results = [await mw(handler, i, {"event_from_user": FakeUser(1)}) for i in range(5)]
+        other = await mw(handler, "other", {"event_from_user": FakeUser(2)})
+        return results, other, calls
 
-    first, second, other, calls = asyncio.run(scenario())
-    assert (first, second, other) == ("ok", None, "ok") and calls == ["e1", "e3"]
+    results, other, calls = asyncio.run(scenario())
+    assert results == ["ok"] * 4 + [None]
+    assert other == "ok" and calls == [0, 1, 2, 3, "other"]
 
 
 def test_throttle_disabled_and_no_user():
@@ -69,21 +69,22 @@ def test_throttle_prunes_old_entries():
         mw = ThrottleMiddleware(interval=0.0001, max_tracked=3)
         for uid in range(10):
             await mw(lambda e, d: asyncio.sleep(0, "ok"), "x", {"event_from_user": FakeUser(uid)})
-        return len(mw._last)
+        return len(mw._recent)
 
     assert asyncio.run(scenario()) <= 3
 
 
-def test_throttle_integration_ignores_double_tap(tmp_path):
+def test_throttle_integration_allows_four_fast_messages(tmp_path):
     env = Env(tmp_path)
     env.dp.message.outer_middleware(ThrottleMiddleware(interval=30))
 
     async def scenario():
-        await env.text(7, "Профиль")
-        await env.text(7, "Профиль")
+        for _ in range(5):
+            await env.text(7, "Профиль")
 
     run(scenario())
-    assert len([c for c in env.session.of(SendMessage) if c.text.startswith("Профиль")]) == 1
+    messages = [c for c in env.session.calls if isinstance(c, (SendMessage, EditMessageText))]
+    assert len([c for c in messages if c.text.startswith("Профиль")]) == 4
 
 
 def many_packs(n=20):
@@ -232,8 +233,9 @@ def test_throttle_first_event_passes_even_right_after_boot(monkeypatch):
 
     async def scenario():
         mw = ThrottleMiddleware(interval=30)
-        first = await mw(lambda e, d: asyncio.sleep(0, "ok"), "x", {"event_from_user": FakeUser(1)})
-        second = await mw(lambda e, d: asyncio.sleep(0, "ok"), "x", {"event_from_user": FakeUser(1)})
-        return first, second
+        return [
+            await mw(lambda e, d: asyncio.sleep(0, "ok"), "x", {"event_from_user": FakeUser(1)})
+            for _ in range(5)
+        ]
 
-    assert asyncio.run(scenario()) == ("ok", None)
+    assert asyncio.run(scenario()) == ["ok"] * 4 + [None]

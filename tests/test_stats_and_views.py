@@ -4,15 +4,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.bot import pack_view, stats_view
-from app.bot.keyboards.reply import ALL_BUTTONS, main_reply_keyboard
-from app.database.models import GameSession, MatchRound, RoundPlayer
-from app.database.pack_repository import PackRepository
-from app.database.session import make_session_factory
-from app.game.session import LocalSession
-from app.services.pack_service import PackService
-from app.services.room_service import RoomService
-from app.services.stats_service import MIN_GAMES_FOR_RATE, StatsService
+from app.views.telegram import pack_view, stats_view
+from app.views.telegram.keyboards.reply import ALL_BUTTONS, main_reply_keyboard
+from app.models.database.models import GameSession, MatchRound, RoundPlayer
+from app.models.database.pack_repository import PackRepository
+from app.models.database.session import make_session_factory
+from app.models.game.session import LocalSession
+from app.models.services.pack_service import PackService
+from app.models.services.room_service import RoomService
+from app.models.services.stats_service import MIN_GAMES_FOR_RATE, StatsService
 from tests.helpers import room_circle, room_guess
 
 

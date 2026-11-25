@@ -1,5 +1,5 @@
 from urllib.parse import parse_qs, urlparse
-from app.bot.runtime import to_room_markup
+from app.controllers.telegram.runtime import to_room_markup
 from tests.test_bot_flow import env, run
 
 
@@ -71,7 +71,7 @@ def test_closed_lobby_link_explains_inactivity_and_allows_new_room(env):
 
 def test_expired_lobby_link_is_not_active(env):
     import pytest
-    from app.game.room import RoomError
+    from app.models.game.room import RoomError
     update = env.service.create(1, "Хост")
     assert env.service.purge_stale(hours=-1) == 1
     with pytest.raises(RoomError, match="неактивно"):

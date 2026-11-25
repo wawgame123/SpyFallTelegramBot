@@ -3,10 +3,10 @@ import sys
 
 from dotenv import load_dotenv
 
-from app.database.info import check_connection, ensure_supported_database, mask_url
-from app.database.migrate import run_migrations
-from app.database.session import make_session_factory
-from app.services.admin_service import AdminError, AdminService, parse_duration
+from app.models.database.info import check_connection, ensure_supported_database, mask_url
+from app.models.database.migrate import run_migrations
+from app.models.database.session import make_session_factory
+from app.models.services.admin_service import AdminError, AdminService, parse_duration
 
 DEFAULT_URL = "mysql+pymysql://spy:spy@localhost:3306/spy_game?charset=utf8mb4"
 EXIT_WORDS = {"0", "q", "quit", "exit", "выход", "в"}
@@ -86,7 +86,7 @@ def show_user(admin: AdminService, ask, say) -> None:
     if user_id is None:
         return
     info = admin.user_info(user_id)
-    from app.services.penalty import ban_message
+    from app.models.services.penalty import ban_message
 
     status = (
         ban_message(info["ban_seconds"], info["ban_reason"])

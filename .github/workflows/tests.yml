@@ -21,6 +21,16 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-test.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/views/web/package-lock.json
+      - name: Build web frontend
+        working-directory: app/views/web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
       - name: Install dependencies
         run: python -m pip install -r requirements-test.txt
       - name: Test
@@ -31,3 +41,33 @@ jobs:
         with:
           name: tests-python-${{ matrix.python-version }}
           path: test-results.xml
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MYSQL_PASSWORD: SpyfallDockerTestOnly
+      MYSQL_ROOT_PASSWORD: SpyfallDockerTestRoot
+      MYSQL_HOST_PORT: '13306'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: |
+          touch .env
+          docker compose build bot
+      - name: Start with MySQL and import starter packs
+        run: |
+          docker compose up -d --wait db
+          docker compose run --rm -T --no-deps bot python -m alembic upgrade head
+          docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" mysql --default-character-set=utf8mb4 -u "$MYSQL_USER" "$MYSQL_DATABASE"' < starter_packs.sql
+          docker compose run --rm -T --no-deps bot python - < tests/docker_smoke.py
+      - name: Start with SQLite and import starter packs
+        run: |
+          docker compose -f compose.sqlite.yml build bot
+          docker compose -f compose.sqlite.yml run --rm -T bot python -m alembic upgrade head
+          docker compose -f compose.sqlite.yml run --rm -T bot python -c "import sqlite3; from pathlib import Path; db = sqlite3.connect('/data/spy_game.sqlite3'); db.executescript(Path('starter_packs.sqlite.sql').read_text(encoding='utf-8')); db.close()"
+          docker compose -f compose.sqlite.yml run --rm -T bot python - < tests/docker_smoke.py
+      - name: Stop isolated containers
+        if: always()
+        run: |
+          docker compose down -v
+          docker compose -f compose.sqlite.yml down -v

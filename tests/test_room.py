@@ -2,10 +2,10 @@ import random
 
 import pytest
 
-from app.database.session import make_session_factory
-from app.game.engine import Phase
-from app.game.room import MAX_MESSAGE_LEN, Room, RoomError
-from app.services.room_service import RoomService
+from app.models.database.session import make_session_factory
+from app.models.game.engine import Phase
+from app.models.game.room import MAX_MESSAGE_LEN, Room, RoomError
+from app.models.services.room_service import RoomService
 
 from tests.helpers import room_circle, room_guess
 T0 = 1000.0
@@ -50,6 +50,67 @@ def start_and_deal(service, room_id, n=4):
     room = service.get(room_id)
     assert room.phase == "playing"
     return room
+
+
+@pytest.mark.parametrize(("correct", "outcome"), [(True, "spy_win_guess"), (False, "spy_wrong_guess")])
+def test_hidden_spy_guess_ends_round_only_after_full_circle(service, correct, outcome):
+    rid = make_room(service)
+    service.act(1, "mode:hidden")
+    service.act(1, "start")
+    rnd = service.get(rid).round
+    spy = int(rnd.spy_id)
+    civilian = next(uid for uid in (1, 2, 3, 4) if uid != spy)
+    assert rnd.hidden_spy_word in rnd.allowed_words and rnd.hidden_spy_word != rnd.word
+    assert service.act(spy, "role").alert == "Ваше слово:\n\n" + rnd.hidden_spy_word.upper()
+    assert service.act(civilian, "role").alert == "Ваше слово:\n\n" + rnd.word.upper()
+    for uid in (1, 2, 3, 4):
+        service.act(uid, "role")
+    with pytest.raises(RoomError, match="после первого круга"):
+        service.act(spy, "gu")
+    room_circle(service, rid, wants=False)
+    result = room_guess(service, rid, spy, correct).room
+    assert result.phase == "result" and result.round.outcome.value == outcome
+    assert result.last_deltas[str(spy)] == (3 if correct else 0)
+    assert result.last_deltas[str(civilian)] == (0 if correct else 1)
+
+
+def test_hidden_spy_civilian_guess_and_host_settings_between_rounds(service):
+    rid = make_room(service)
+    service.act(1, "mode:hidden")
+    current = start_and_deal(service, rid)
+    spy = int(current.round.spy_id)
+    civilian = next(uid for uid in (1, 2, 3, 4) if uid != spy)
+    room_circle(service, rid, wants=False)
+    attempt = room_guess(service, rid, civilian, correct=True)
+    assert attempt.room.phase == "playing" and "Игра продолжается" in attempt.alert
+    assert str(civilian) in service.get(rid).round.hidden_attempts
+    with pytest.raises(RoomError, match="один раз"):
+        service.act(civilian, "gu")
+    service.act(spy, "gu")
+    room_circle(service, rid, wants=True)
+    assert service.get(rid).round.phase == Phase.SUSPECT_VOTE
+    assert not service.get(rid).guess_ui
+    with pytest.raises(RoomError, match="до голосования"):
+        service.act(spy, "gu")
+    assert all(action != "gu" for row in service.get(rid).view_for(spy).rows for _, action in row)
+    for uid in (1, 2, 3, 4):
+        service.act(uid, f"v:{spy if uid != spy else civilian}")
+    current = service.get(rid)
+    assert current.phase == "result" and current.round.outcome.value == "civilians_win"
+    assert current.last_deltas[str(civilian)] == 0
+    assert sum(current.last_deltas.values()) == 2
+    with pytest.raises(RoomError, match="только хосту"):
+        service.act(2, "set")
+    result = service.act(1, "set").room
+    assert "Настройки комнаты" in result.view_for(1).text
+    assert "Итоги раунда" in result.view_for(2).text
+    service.act(1, "mode:classic")
+    service.act(1, "sv:turn:90")
+    restored = service.act(1, "ui:lobby").room
+    assert restored.phase == "result" and len(restored.history) == 1
+    next_room = service.act(1, "next").room
+    assert next_room.round_no == 2 and not next_room.round.hidden
+    assert next_room.settings["turn_seconds"] == 90
 
 
 def test_practice_requires_majority_and_keeps_first_rated_round_at_one(service):
@@ -100,7 +161,7 @@ def test_rematch_preserves_history_and_hides_practice_for_experienced_roster(ser
     assert not service.get(rid).practice_available
     with pytest.raises(RoomError):
         service.act(1, action)
-    from app.services.history_service import HistoryService
+    from app.models.services.history_service import HistoryService
     history = HistoryService(service._factory)
     assert history.lobby(1, finished.session_id).status == "finished"
     service.act(2, "rd:1")
@@ -236,13 +297,20 @@ def test_force_start_by_host(service):
 
 def test_turn_order_say_only_on_own_turn_and_limits(service):
     rid = make_room(service)
+    service.say(1, "До начала\nВторая строка", expected_phase="lobby")
+    waiting = service.get(rid)
+    assert waiting.chat[-1] == [waiting.name_of("1"), "До начала\nВторая строка", 1]
+    assert not waiting.civilian_has_spoken
     room = start_and_deal(service, rid)
+    assert not any("До начала" in entry[1] for entry in room.chat)
     current = int(room.current())
     other = next(p["id"] for p in room.players if p["id"] != current)
     with pytest.raises(RoomError):
         service.say(other, "не мой ход")
-    service.say(current, "Привет <b>всем</b>")
-    assert service.get(rid).chat[-1] == [room.name_of(str(current)), "Привет <b>всем</b>"]
+    with pytest.raises(RoomError, match="Чат изменился"):
+        service.say(current, "Запоздавшее сообщение", expected_phase="lobby")
+    service.say(current, "Привет\n<b>всем</b>", expected_phase="discussion")
+    assert service.get(rid).chat[-1] == [room.name_of(str(current)), "Привет\n<b>всем</b>", current]
     with pytest.raises(RoomError):
         service.say(current, "x" * (MAX_MESSAGE_LEN + 1))
     with pytest.raises(RoomError):
@@ -256,6 +324,11 @@ def test_chat_text_is_escaped_in_view(service):
     service.say(current, "<script>alert(1)</script>")
     view = service.get(rid).view_for(1, "bot", T0).text
     assert "<script>" not in view and "&lt;script&gt;" in view
+    stored = service.get(rid).to_dict()
+    del stored["civilian_has_spoken"]
+    stored["chat"] = [entry[:2] for entry in stored["chat"]]
+    restored = Room.from_dict(stored)
+    assert "&lt;script&gt;" in restored.view_for(1, "bot", T0).text
 
 
 def test_end_turn_and_timer_tick(service, clock):
@@ -365,6 +438,37 @@ def test_online_non_spy_cannot_open_guess_panel(service):
         service.act(other, "gu")
     assert service.get(rid).phase == "playing"
     assert service.get(rid).guess_ui == {}
+
+
+def test_guess_filter_and_crossed_words_persist_privately(service):
+    rid = make_room(service)
+    room = start_and_deal(service, rid)
+    spy = int(room.round.spy_id)
+    if int(room.current()) == spy:
+        service.act(spy, "endturn:0")
+    service.say(int(service.get(rid).current()), "Первая подсказка")
+    service.act(spy, "gu")
+    state = service.get(rid)
+    words = state.guess_sheet(spy)["words"]
+    index = words.index(state.round.word)
+    service.act(spy, "gq:" + words[index].upper())
+    shown = {command for row in service.get(rid).view_for(spy).rows for _, command in row}
+    assert f"gp:{index}" in shown
+    service.act(spy, "gm")
+    assert f"gx:{index}:1" in {command for row in service.get(rid).view_for(spy).rows for _, command in row}
+    service.act(spy, f"gx:{index}:1")
+    service.act(spy, "cancel")
+    service.act(spy, "gu")
+    state = service.get(rid)
+    assert state.guess_sheet(spy)["crossed"] == [index]
+    other = next(player["id"] for player in state.players if player["id"] != spy)
+    assert state.guess_sheet(other) is None
+    with pytest.raises(RoomError):
+        service.act(spy, f"gp:{index}")
+    service.act(spy, f"gx:{index}:0")
+    service.act(spy, f"gp:{index}")
+    result = service.act(spy, "yes").room
+    assert not result.guess_crossed and result.round.outcome.value == "spy_win_guess"
 
 
 def test_online_wrong_guess_before_voting_loses_at_once(service):

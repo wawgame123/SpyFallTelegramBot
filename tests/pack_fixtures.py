@@ -1,6 +1,6 @@
-"""Test-only pack data. The bot loads packs from the configured database."""
+"""Test-only pack data. Production packs are loaded exclusively from MySQL."""
 
-from app.game.packs import Pack, PackLibrary
+from app.models.game.packs import Pack, PackLibrary
 
 DEFAULT_PACKS = [
     {

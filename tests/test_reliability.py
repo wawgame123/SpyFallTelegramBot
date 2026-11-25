@@ -8,7 +8,7 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError, TelegramRetryAfter
 from aiogram.methods import EditMessageText, SendMessage, GetUpdates, AnswerCallbackQuery
 
-from app.database.worker import run_db
+from app.models.database.worker import run_db
 from app.health import check_health, monitor_health, PollingHealthMiddleware, write_status
 from tests.test_bot_flow import env, run
 from tests.test_performance import make_panels
@@ -192,8 +192,8 @@ def test_polling_health_only_advances_after_successful_long_poll():
 @pytest.mark.parametrize('callback', ['set:menu', 'hist:menu', 'pk:menu', 'lg:1:show'])
 def test_non_room_screens_retry_edits_and_use_current_preferences(env, callback):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from app.bot.recovery import EditRecoveryMiddleware
-    from app.bot.emoji import ButtonStyleMiddleware
+    from app.controllers.telegram.recovery import EditRecoveryMiddleware
+    from app.controllers.telegram.middlewares.button_style import ButtonStyleMiddleware
     recovery = EditRecoveryMiddleware()
     env.bot.session.middleware(recovery)
     env.bot.session.middleware(ButtonStyleMiddleware(env.user_settings.prefs))
@@ -220,7 +220,7 @@ def test_non_room_screens_retry_edits_and_use_current_preferences(env, callback)
 @pytest.mark.parametrize('next_action', ['edit', 'delete', 'online'])
 def test_new_navigation_cancels_older_deferred_screen(env, next_action):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from app.bot.recovery import EditRecoveryMiddleware
+    from app.controllers.telegram.recovery import EditRecoveryMiddleware
     recovery = EditRecoveryMiddleware()
     env.bot.session.middleware(recovery)
     env.session.fail_on[EditMessageText] = lambda method: TelegramNetworkError(method=method, message='offline')

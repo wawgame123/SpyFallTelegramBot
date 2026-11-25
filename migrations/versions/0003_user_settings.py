@@ -5,7 +5,7 @@ Revises: 0002
 """
 from alembic import op
 
-from app.database.models import UserSetting
+from app.models.database.models import UserSetting
 
 revision = "0003"
 down_revision = "0002"

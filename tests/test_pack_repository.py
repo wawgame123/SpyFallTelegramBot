@@ -3,12 +3,12 @@ import random
 
 from sqlalchemy import select
 
-from app.database.models import PackCategory, PackWord, QuestionPack
-from app.database.pack_repository import PackRepository
-from app.database.session import make_session_factory
-from app.game.room import Room
-from app.game.session import LocalSession
-from app.services.room_service import RoomService
+from app.models.database.models import PackCategory, PackWord, QuestionPack
+from app.models.database.pack_repository import PackRepository
+from app.models.database.session import make_session_factory
+from app.models.game.room import Room
+from app.models.game.session import LocalSession
+from app.models.services.room_service import RoomService
 
 
 def make_repo(tmp_path):

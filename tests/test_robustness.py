@@ -5,8 +5,8 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage
 
-from app.bot.errors import HarmlessBadRequest, on_harmless_bad_request, on_network_error
-from app.bot.ui import safe_answer
+from app.controllers.telegram.errors import HarmlessBadRequest, on_harmless_bad_request, on_network_error
+from app.views.telegram.ui import safe_answer
 from app.core.config import load_settings
 from tests.test_bot_flow import Env, run
 

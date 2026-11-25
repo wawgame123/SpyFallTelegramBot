@@ -3,12 +3,12 @@ import random
 
 import pytest
 
-from app.database.session import make_session_factory
-from app.game.engine import GameError, Phase, Round
-from app.game.room import RoomError
-from app.game.scoring import Outcome, ScoreRules
-from app.game.session import LocalSession, Stage
-from app.services.room_service import RoomService
+from app.models.database.session import make_session_factory
+from app.models.game.engine import GameError, Phase, Round
+from app.models.game.room import RoomError
+from app.models.game.scoring import Outcome, ScoreRules
+from app.models.game.session import LocalSession, Stage
+from app.models.services.room_service import RoomService
 from tests.helpers import local_circle, local_guess, room_circle, room_guess
 
 

@@ -8,14 +8,14 @@ from sqlalchemy import event
 from aiogram.methods import DeleteMessage, SendMessage, AnswerCallbackQuery
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
-from app.bot.confirmations import LeaveConfirmations
-from app.bot.middlewares.private import PrivateCallbacksMiddleware
-from app.bot.middlewares import throttle
-from app.bot.middlewares.throttle import ThrottleMiddleware
+from app.controllers.telegram.confirmations import LeaveConfirmations
+from app.controllers.telegram.middlewares.private import PrivateCallbacksMiddleware
+from app.controllers.telegram.middlewares import throttle
+from app.controllers.telegram.middlewares.throttle import ThrottleMiddleware
 from app.core.security import is_admin
-from app.database.models import UserPenalty
-from app.game.room import RoomError
-from app.services.limits import FailedJoinLimiter
+from app.models.database.models import UserPenalty
+from app.models.game.room import RoomError
+from app.models.services.limits import FailedJoinLimiter
 from tests.test_bot_flow import env, run
 
 
@@ -245,17 +245,17 @@ def test_throttle_has_bounded_memory_and_separate_message_callback_limits(env):
         assert len(env.session.of(AnswerCallbackQuery)) == 1
         for uid in range(2, 20):
             await middleware(handler, "message", {"event_from_user": User(id=uid, is_bot=False, first_name="A")})
-        assert len(middleware._last) <= 3 and len(middleware._notified) <= 3
+        assert len(middleware._recent) <= 3 and len(middleware._notified) <= 3
     run(scenario())
 
 
-def test_callback_burst_drops_pending_actions_and_duplicate_taps(env, monkeypatch):
+def test_callback_burst_allows_four_presses_and_bounds_pending_actions(env, monkeypatch):
     clock = SimpleNamespace(now=0.0)
     monkeypatch.setattr(throttle, "time", SimpleNamespace(monotonic=lambda: clock.now))
 
     async def scenario():
         middleware = ThrottleMiddleware()
-        started, release = asyncio.Event(), asyncio.Event()
+        started, release = asyncio.Queue(), asyncio.Event()
         user = User(id=1, is_bot=False, first_name="A")
 
         def press(update_id, action):
@@ -269,7 +269,7 @@ def test_callback_burst_drops_pending_actions_and_duplicate_taps(env, monkeypatc
             )
 
         async def slow(event, data):
-            started.set()
+            started.put_nowait(None)
             await release.wait()
             return "handled"
 
@@ -277,16 +277,16 @@ def test_callback_burst_drops_pending_actions_and_duplicate_taps(env, monkeypatc
             return "handled"
 
         data = {"event_from_user": user}
-        first = asyncio.create_task(middleware(slow, press(1, "rm:gu"), data))
-        await started.wait()
+        pending = [asyncio.create_task(middleware(slow, press(i, "rm:gu"), data)) for i in range(1, 5)]
+        for _ in pending:
+            await started.get()
         clock.now = 0.4
-        assert await middleware(fast, press(2, "menu:home"), data) is None
-        release.set()
-        assert await first == "handled"
-        assert await middleware(fast, press(3, "rm:gu"), data) is None
-        assert await middleware(fast, press(4, "menu:home"), data) == "handled"
+        assert await middleware(fast, press(5, "rm:gu"), data) is None
         clock.now = 1.1
-        assert await middleware(fast, press(5, "rm:gu"), data) == "handled"
+        assert await middleware(fast, press(6, "menu:home"), data) is None
+        release.set()
+        assert await asyncio.gather(*pending) == ["handled"] * 4
+        assert await middleware(fast, press(7, "rm:gu"), data) == "handled"
         assert len(env.session.of(AnswerCallbackQuery)) == 1
 
     run(scenario())

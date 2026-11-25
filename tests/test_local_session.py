@@ -1,9 +1,9 @@
 from tests.pack_fixtures import test_library
 import random
 
-from app.database.repository import LocalGameRepository
-from app.database.session import make_session_factory
-from app.game.session import LocalSession, Stage
+from app.models.database.repository import LocalGameRepository
+from app.models.database.session import make_session_factory
+from app.models.game.session import LocalSession, Stage
 from tests.helpers import local_circle, local_guess
 
 NAMES = ["Павел", "Максим", "Анна", "Илья", "Катя"]
@@ -359,7 +359,7 @@ def pick_themes(s, ids, random_order=False):
 
 
 def finish_round_quickly(s):
-    from app.game.scoring import Outcome
+    from app.models.game.scoring import Outcome
 
     s.round.phase = s.round.phase.__class__.FINISHED
     s.round.outcome = Outcome.DRAW
@@ -427,7 +427,7 @@ def test_theme_screen_explains_order_and_shows_label():
 
 
 def test_words_not_repeated_until_pool_exhausted():
-    from app.game.scoring import Outcome
+    from app.models.game.scoring import Outcome
 
     s = setup_session(seed=13)
     seen = {s.round.word}

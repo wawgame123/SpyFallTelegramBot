@@ -5,7 +5,7 @@ Revises:
 """
 from alembic import op
 
-from app.database.models import Base
+from app.models.database.models import Base
 
 revision = "0001"
 down_revision = None

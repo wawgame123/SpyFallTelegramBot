@@ -3,17 +3,17 @@ import re
 
 import pytest
 
-from app.bot.keyboards.menu import admin_lobby_menu, local_choice_menu, online_menu
-from app.bot.keyboards.reply import ALL_BUTTONS, main_reply_keyboard
+from app.views.telegram.keyboards.menu import admin_lobby_menu, local_choice_menu, online_menu
+from app.views.telegram.keyboards.reply import ALL_BUTTONS, main_reply_keyboard
 from app.core.config import Settings
 from app.core.console import parse_command
 from app.core.security import is_admin
-from app.database.models import GameSession
-from app.database.session import make_session_factory
-from app.game.engine import Phase
-from app.game.room import RoomError
-from app.services.history_service import HistoryService
-from app.services.room_service import RoomService
+from app.models.database.models import GameSession
+from app.models.database.session import make_session_factory
+from app.models.game.engine import Phase
+from app.models.game.room import RoomError
+from app.models.services.history_service import HistoryService
+from app.models.services.room_service import RoomService
 from tests.helpers import room_circle, room_guess
 
 EMOJI = re.compile(
@@ -29,16 +29,16 @@ def service(tmp_path):
 
 def test_username_without_configured_id_never_grants_admin_rights():
     settings = Settings(bot_token="x", database_url="x")
-    for username in ("ExampleAdmin", "exampleadmin", "someone", None, ""):
+    for username in ("WAWGAME", "wawgame", "someone", None, ""):
         assert not is_admin(settings, 1, username)
 
 
 def test_is_admin_id_is_authoritative_when_configured():
     settings = Settings(bot_token="x", database_url="x", admin_id=777)
-    assert is_admin(settings, 777, "ExampleAdmin")
+    assert is_admin(settings, 777, "WAWGAME")
     assert is_admin(settings, 777, "another_name")
     assert is_admin(settings, 777, None)
-    assert not is_admin(settings, 5, "ExampleAdmin")
+    assert not is_admin(settings, 5, "WAWGAME")
 
 
 def test_test_lobby_size_validation(service):
@@ -164,7 +164,7 @@ def test_test_lobby_rounds_are_in_history_but_not_in_rating(service):
     assert lobby_total == 1 and lobbies[0].rounds_count == 1
     with factory() as db:
         assert db.query(GameSession).one().is_test is True
-    from app.services.stats_service import StatsService
+    from app.models.services.stats_service import StatsService
 
     stats = StatsService(factory)
     assert stats.profile(1) is None

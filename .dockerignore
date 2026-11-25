@@ -9,3 +9,6 @@
 !app/**
 **/__pycache__/
 **/*.py[cod]
+**/.env*
+app/views/web/node_modules/
+app/views/web/dist/

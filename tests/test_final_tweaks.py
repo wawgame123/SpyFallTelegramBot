@@ -3,9 +3,9 @@ import random
 import pytest
 from aiogram.methods import DeleteMessage, DeleteMessages, EditMessageText, SendMessage
 
-from app.database.session import make_session_factory
-from app.game.room import Room
-from app.services.room_service import RoomService
+from app.models.database.session import make_session_factory
+from app.models.game.room import Room
+from app.models.services.room_service import RoomService
 from tests.helpers import room_guess
 from tests.test_bot_flow import Env, run
 
@@ -56,9 +56,9 @@ def test_non_admin_never_gets_admin_button_or_reply(tmp_path):
     env = Env(tmp_path)
 
     async def scenario():
-        await env.text(9, "/start", username="ExampleAdmin_FAN")
-        await env.text(9, "Админ", username="ExampleAdmin_FAN")
-        await env.text(9, "/admin", username="ExampleAdmin_FAN")
+        await env.text(9, "/start", username="WAWGAME_FAN")
+        await env.text(9, "Админ", username="WAWGAME_FAN")
+        await env.text(9, "/admin", username="WAWGAME_FAN")
 
     run(scenario())
     sends = env.session.of(SendMessage)

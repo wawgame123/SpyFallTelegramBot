@@ -9,37 +9,38 @@ from aiogram.types import BotCommand, MenuButtonCommands
 from sqlalchemy.orm import sessionmaker
 
 from app.health import PollingHealthMiddleware, health_path, monitor_health
-from app.database.worker import run_db
-from app.bot.backlog import replay_pending_updates
+from app.models.database.worker import run_db
+from app.controllers.telegram.backlog import replay_pending_updates
 
-from app.bot.handlers import admin as admin_handlers
-from app.bot.handlers import history, local, menu, online
-from app.bot.handlers import packs as packs_handlers
-from app.bot.handlers import settings as settings_handlers
-from app.bot.handlers import stats as stats_handlers
-from app.bot.errors import register_error_handlers
-from app.bot.emoji import ButtonStyleMiddleware
-from app.bot.middlewares.normalize import NormalizeButtonsMiddleware
-from app.bot.middlewares.navigation import KeepMenuMiddleware
-from app.bot.middlewares.throttle import ThrottleMiddleware
-from app.bot.middlewares.private import PrivateCallbacksMiddleware
-from app.bot.middlewares.track import TrackScreensMiddleware
-from app.bot.runtime import OnlineRuntime
-from app.bot.recovery import EditRecoveryMiddleware
-from app.bot.tracker import ScreenTracker
+from app.controllers.telegram.handlers import admin as admin_handlers
+from app.controllers.telegram.handlers import history, local, menu, online
+from app.controllers.telegram.handlers import packs as packs_handlers
+from app.controllers.telegram.handlers import settings as settings_handlers
+from app.controllers.telegram.handlers import stats as stats_handlers
+from app.controllers.telegram.errors import register_error_handlers
+from app.controllers.telegram.middlewares.button_style import ButtonStyleMiddleware
+from app.controllers.telegram.middlewares.normalize import NormalizeButtonsMiddleware
+from app.controllers.telegram.middlewares.navigation import KeepMenuMiddleware
+from app.controllers.telegram.middlewares.throttle import ThrottleMiddleware
+from app.controllers.telegram.middlewares.private import PrivateCallbacksMiddleware
+from app.controllers.telegram.middlewares.track import TrackScreensMiddleware
+from app.controllers.telegram.runtime import OnlineRuntime
+from app.controllers.telegram.recovery import EditRecoveryMiddleware
+from app.views.telegram.tracker import ScreenTracker
 from app.core.config import Settings, load_settings
 from app.core.console import start_console_control
-from app.database.info import check_connection, ensure_supported_database, mask_url
-from app.database.migrate import run_migrations
-from app.database.pack_repository import PackRepository
-from app.database.repository import LocalGameRepository
-from app.database.session import make_session_factory
-from app.services.admin_service import AdminService
-from app.services.history_service import HistoryService
-from app.services.pack_service import PackService
-from app.services.room_service import RoomService
-from app.services.settings_service import SettingsService
-from app.services.stats_service import StatsService
+from app.models.database.info import check_connection, ensure_supported_database, mask_url
+from app.models.database.migrate import run_migrations
+from app.models.database.pack_repository import PackRepository
+from app.models.database.repository import LocalGameRepository
+from app.models.database.session import make_session_factory
+from app.models.services.admin_service import AdminService
+from app.models.services.history_service import HistoryService
+from app.models.services.pack_service import PackService
+from app.models.services.room_service import RoomService
+from app.models.services.settings_service import SettingsService
+from app.models.services.stats_service import StatsService
+from app.controllers.web.server import start_web, web_origin
 
 
 def build_dispatcher(
@@ -60,7 +61,7 @@ def build_dispatcher(
     )
     dp = Dispatcher(events_isolation=SimpleEventIsolation())
     register_error_handlers(dp)
-    throttle = ThrottleMiddleware(0.25)
+    throttle = ThrottleMiddleware()
     dp.message.outer_middleware(throttle)
     dp.update.outer_middleware.unregister(dp.fsm)
     dp.update.outer_middleware(throttle)
@@ -99,8 +100,13 @@ def build_dispatcher(
 async def poll(bot: Bot, dp: Dispatcher, runtime: OnlineRuntime, factory: sessionmaker) -> None:
     # Give queued actions a chance to update game state before expiring old turns
     # or removing inactive rooms and local games.
+    runner = None
     try:
         await replay_pending_updates(bot, dp)
+        if getattr(runtime, "web_url", None):
+            runner = await start_web(
+                runtime, runtime.web_url, bot.token, packs=dp["packs"], stats=dp["stats"], factory=factory,
+            )
         polling_health = PollingHealthMiddleware()
         bot.session.middleware(polling_health)
         ticker = asyncio.create_task(runtime.run_ticker(), name="room-timer")
@@ -114,7 +120,10 @@ async def poll(bot: Bot, dp: Dispatcher, runtime: OnlineRuntime, factory: sessio
             health.cancel()
             await asyncio.gather(ticker, health, return_exceptions=True)
     finally:
+        if runner:
+            await runner.cleanup()
         health_path().unlink(missing_ok=True)
+        await runtime.close()
         await bot.session.close()
 
 
@@ -130,7 +139,7 @@ async def main() -> None:
         await run_db(check_connection, settings.database_url)
     except Exception as err:
         raise SystemExit(
-            f"Не удалось подключиться к базе ({mask_url(settings.database_url)}): {err}\n"
+            f"Не удалось подключиться к базе данных ({mask_url(settings.database_url)}): {err}\n"
             "Проверьте адрес MySQL и учётные данные или доступ к файлу SQLite."
         ) from err
     await run_db(run_migrations, settings.database_url)
@@ -156,6 +165,7 @@ async def main() -> None:
         bot, me.username, factory, settings,
         anchor_file=Path(__file__).resolve().parents[1] / ".ui_anchors.json",
     )
+    runtime.web_url = web_origin()
     start_console_control()
     await poll(bot, dp, runtime, factory)
 

@@ -5,9 +5,9 @@ import pytest
 from sqlalchemy import DateTime, bindparam, create_engine, inspect, select, text
 from aiogram.methods import SendMessage
 
-from app.database.models import GameSession, QuestionPack, RoomRecord
-from app.database.migrate import run_migrations
-from app.services.pack_service import PackError, MIN_WORDS
+from app.models.database.models import GameSession, QuestionPack, RoomRecord
+from app.models.database.migrate import run_migrations
+from app.models.services.pack_service import PackError, MIN_WORDS
 from tests.test_bot_flow import env, run
 
 
@@ -152,7 +152,7 @@ def test_migration_converts_legacy_float_fields_and_recovers_exact_deadline(tmp_
         assert conn.execute(text("SELECT deadline FROM rooms WHERE id=1")).scalar_one() == exact
         activity = conn.execute(text("SELECT last_activity_at FROM rooms WHERE id=1")).scalar_one()
         assert str(activity).startswith("2026-11-01 12:00:00")
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0010"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0014"
     for table, names in [("rooms", ["deadline"]), ("user_penalties", ["banned_until", "last_leave_at"])]:
         cols = {c["name"]: c for c in inspect(engine).get_columns(table)}
         assert all("DOUBLE" in str(cols[n]["type"]).upper() for n in names)

@@ -25,7 +25,8 @@ def room_circle(service, rid, wants=True):
 
 def room_guess(service, rid, uid, correct=True):
     room = service.get(rid)
-    if room.round.phase.value == "discussion" and not room.civilian_has_spoken and not room.is_test:
+    if (not room.round.hidden and room.round.phase.value == "discussion"
+            and not room.civilian_has_spoken and not room.is_test):
         while room.round.current() == room.round.spy_id:
             service.act(uid, "endturn:0")
             room = service.get(rid)

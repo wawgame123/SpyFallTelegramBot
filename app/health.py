@@ -10,7 +10,7 @@ from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.methods import GetUpdates
 from sqlalchemy import text
 
-from app.database.worker import run_db
+from app.models.database.worker import run_db
 
 log = logging.getLogger(__name__)
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / '.bot-health.json'

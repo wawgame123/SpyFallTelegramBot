@@ -1,12 +1,7 @@
-import sqlite3
-from contextlib import closing
-from pathlib import Path
-
 from sqlalchemy import create_engine, inspect, text
 
-from app.database.migrate import run_migrations
-from app.database.pack_repository import PackRepository
-from app.database.session import make_session_factory
+from app.models.database.migrate import run_migrations
+from app.models.database.session import make_session_factory
 
 
 def test_fresh_database_gets_all_tables_and_version(tmp_path):
@@ -14,11 +9,28 @@ def test_fresh_database_gets_all_tables_and_version(tmp_path):
     run_migrations(url)
     inspector = inspect(create_engine(url))
     tables = set(inspector.get_table_names())
-    assert {"rooms", "question_packs", "round_players", "user_settings", "alembic_version"} <= tables
+    assert {"rooms", "question_packs", "round_players", "user_settings", "web_friends",
+            "avatar_appearances", "web_sessions", "alembic_version"} <= tables
     columns = {c["name"] for c in inspector.get_columns("question_packs")}
     assert {"is_hidden", "owner_name"} <= columns
     with create_engine(url).connect() as conn:
-        assert conn.execute(text("select version_num from alembic_version")).scalar() == "0010"
+        assert conn.execute(text("select version_num from alembic_version")).scalar() == "0014"
+
+
+def test_avatar_placement_migration_keeps_existing_accessories(tmp_path):
+    url = f"sqlite:///{tmp_path}/appearance.db"
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0012')"))
+        connection.execute(text(
+            "CREATE TABLE avatar_appearances (user_id BIGINT PRIMARY KEY, hat VARCHAR(24), face VARCHAR(24))"
+        ))
+        connection.execute(text("INSERT INTO avatar_appearances VALUES (42, 'fedora', 'cat')"))
+    run_migrations(url)
+    with engine.connect() as connection:
+        look = connection.execute(text("SELECT hat, face, placement, outfit FROM avatar_appearances")).one()
+        assert tuple(look) == ("fedora", "cat", None, None)
 
 
 def test_legacy_database_is_upgraded_without_data_loss(tmp_path):
@@ -47,25 +59,6 @@ def test_migrations_are_idempotent_and_compatible_with_session_factory(tmp_path)
     run_migrations(url)
     factory = make_session_factory(url)
     assert factory is not None
-
-
-def test_sqlite_seed_uses_migrated_schema_and_can_be_imported_twice(tmp_path):
-    db_path = tmp_path / "spy_game.sqlite3"
-    url = f"sqlite:///{db_path.as_posix()}"
-    run_migrations(url)
-    script = Path(__file__).resolve().parents[1] / "starter_packs.sqlite.sql"
-    with closing(sqlite3.connect(db_path)) as connection:
-        for _ in range(2):
-            connection.executescript(script.read_text(encoding="utf-8"))
-        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
-    factory = make_session_factory(url)
-    try:
-        packs = PackRepository(factory).load_library().packs()
-        assert len(packs) == 8
-        assert sum(len(pack.words) for pack in packs) == 160
-        assert "пингвин" in packs[0].words
-    finally:
-        factory.kw["bind"].dispose()
 
 
 def test_legacy_game_sessions_get_is_test_column(tmp_path):

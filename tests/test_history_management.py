@@ -3,12 +3,12 @@ from sqlalchemy import select, inspect
 from aiogram.methods import EditMessageText
 
 from tests.test_bot_flow import Env, run
-from app.database.models import GameSession, MatchRound, RoundPlayer, SessionPlayer, QuestionPack
-from app.services.history_admin_service import HistoryAdminService
-from app.services.admin_service import AdminError, AdminService
-from app.services.history_service import HistoryService
-from app.services.pack_service import PackError
-from app.database.migrate import run_migrations
+from app.models.database.models import GameSession, MatchRound, RoundPlayer, SessionPlayer, QuestionPack
+from app.models.services.history_admin_service import HistoryAdminService
+from app.models.services.admin_service import AdminError, AdminService
+from app.models.services.history_service import HistoryService
+from app.models.services.pack_service import PackError
+from app.models.database.migrate import run_migrations
 
 
 @pytest.fixture
@@ -72,10 +72,10 @@ def test_forged_foreign_context_is_denied(setup):
         from dataclasses import replace
         original_settings = env.dp["settings"]
         env.dp["settings"] = replace(original_settings, admin_id=3)
-        await env.press(3, f"hist:admin:deleteok:{rid}", username="ExampleAdmin")
+        await env.press(3, f"hist:admin:deleteok:{rid}", username="WAWGAME")
         env.dp["settings"] = original_settings
         assert HistoryAdminService(factory).pack(pid)["id"] == pid
-        await env.press(1, f"hist:admin:banok:{rid}:999:perm", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:banok:{rid}:999:perm", username="WAWGAME")
         assert AdminService(factory).user_info(999)["ban_seconds"] == 0
     run(scenario())
 
@@ -83,13 +83,13 @@ def test_forged_foreign_context_is_denied(setup):
 def test_ban_requires_confirmation_and_self_is_protected(setup):
     env, factory, pid, rid, sid = setup
     async def scenario():
-        await env.press(1, f"hist:admin:ban:{rid}:2:60", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:ban:{rid}:2:60", username="WAWGAME")
         assert AdminService(factory).user_info(2)["ban_seconds"] == 0
-        await env.press(1, f"hist:admin:banok:{rid}:2:60", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:banok:{rid}:2:60", username="WAWGAME")
         assert AdminService(factory).user_info(2)["ban_seconds"] > 3500
-        await env.press(1, f"hist:admin:unban:{rid}:2", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:unban:{rid}:2", username="WAWGAME")
         assert AdminService(factory).user_info(2)["ban_seconds"] == 0
-        await env.press(1, f"hist:admin:banok:{rid}:1:perm", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:banok:{rid}:1:perm", username="WAWGAME")
         assert AdminService(factory).user_info(1)["ban_seconds"] == 0
     run(scenario())
 
@@ -98,21 +98,21 @@ def test_pack_controls_and_title_snapshot(setup):
     env, factory, pid, rid, sid = setup
     async def scenario():
         for action, expected in [("public", True), ("private", False)]:
-            await env.press(1, f"hist:admin:{action}:{rid}", username="ExampleAdmin")
+            await env.press(1, f"hist:admin:{action}:{rid}", username="WAWGAME")
             assert HistoryAdminService(factory).pack(pid)["public"] == expected
-        await env.press(1, f"hist:admin:hide:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:hide:{rid}", username="WAWGAME")
         assert HistoryAdminService(factory).pack(pid)["hidden"]
-        await env.press(1, f"hist:admin:public:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:public:{rid}", username="WAWGAME")
         assert not HistoryAdminService(factory).pack(pid)["public"]
-        await env.press(1, f"hist:admin:restore:{rid}", username="ExampleAdmin")
-        await env.press(1, f"hist:admin:rename:{rid}", username="ExampleAdmin")
-        await env.text(1, "Новое имя", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:restore:{rid}", username="WAWGAME")
+        await env.press(1, f"hist:admin:rename:{rid}", username="WAWGAME")
+        await env.text(1, "Новое имя", username="WAWGAME")
         assert HistoryAdminService(factory).pack(pid)["title"] == "Новое имя"
         assert HistoryService(factory).round_detail(1, rid)["pack_title"] == "Исторический пак"
-        await env.press(1, f"hist:admin:words:{rid}", username="ExampleAdmin")
-        await env.text(1, "кот, лиса, пёс", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:words:{rid}", username="WAWGAME")
+        await env.text(1, "кот, лиса, пёс", username="WAWGAME")
         assert HistoryAdminService(factory).pack(pid)["words"] == ["кот", "лиса", "пёс"]
-        await env.press(1, f"hist:admin:public:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:public:{rid}", username="WAWGAME")
         assert not HistoryAdminService(factory).pack(pid)["public"]
     run(scenario())
 
@@ -120,18 +120,18 @@ def test_pack_controls_and_title_snapshot(setup):
 def test_cancel_rename_and_delete_confirmation(setup):
     env, factory, pid, rid, sid = setup
     async def scenario():
-        await env.press(1, f"hist:admin:rename:{rid}", username="ExampleAdmin")
-        await env.press(1, f"hist:pack:{rid}", username="ExampleAdmin")
-        await env.text(1, "Не название", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:rename:{rid}", username="WAWGAME")
+        await env.press(1, f"hist:pack:{rid}", username="WAWGAME")
+        await env.text(1, "Не название", username="WAWGAME")
         assert HistoryAdminService(factory).pack(pid)["title"] == "Исторический пак"
-        await env.press(1, f"hist:admin:delete:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:delete:{rid}", username="WAWGAME")
         assert HistoryAdminService(factory).pack(pid)["id"] == pid
-        await env.press(1, f"hist:admin:deleteok:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:deleteok:{rid}", username="WAWGAME")
         with pytest.raises(AdminError):
             HistoryAdminService(factory).pack(pid)
         detail = HistoryService(factory).round_detail(1, rid)
         assert detail["pack_id"] == pid and detail["pack_title"] == "Исторический пак"
-        await env.press(1, f"hist:pack:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:pack:{rid}", username="WAWGAME")
         assert "удалён" in env.last_text()
     run(scenario())
 
@@ -141,9 +141,9 @@ def test_old_round_does_not_guess_pack_by_title(setup):
     with factory.begin() as db:
         db.get(MatchRound, rid).pack_id = None
     async def scenario():
-        await env.press(1, f"hist:pack:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:pack:{rid}", username="WAWGAME")
         assert "точный ID" in env.last_text()
-        await env.press(1, f"hist:admin:hide:{rid}", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:hide:{rid}", username="WAWGAME")
         assert not HistoryAdminService(factory).pack(pid)["hidden"]
     run(scenario())
 
@@ -152,8 +152,8 @@ def test_edit_input_precedes_in_room_chat(setup):
     env, factory, pid, rid, sid = setup
     async def scenario():
         await env.press(1, "online:create", message_id=700)
-        await env.press(1, f"hist:admin:rename:{rid}", username="ExampleAdmin")
-        await env.text(1, "Название из истории", username="ExampleAdmin")
+        await env.press(1, f"hist:admin:rename:{rid}", username="WAWGAME")
+        await env.text(1, "Название из истории", username="WAWGAME")
         assert HistoryAdminService(factory).pack(pid)["title"] == "Название из истории"
     run(scenario())
 
@@ -193,12 +193,12 @@ def test_migration_adds_pack_snapshot_columns(tmp_path):
     assert {"pack_id", "pack_title"} <= {c["name"] for c in inspect(engine).get_columns("match_rounds")}
     with engine.connect() as conn:
         from sqlalchemy import text
-        assert conn.execute(text("select version_num from alembic_version")).scalar_one() == "0010"
+        assert conn.execute(text("select version_num from alembic_version")).scalar_one() == "0014"
     engine.dispose()
 
 
 def test_hidden_pack_cannot_start_new_round_and_active_pack_cannot_be_deleted(setup):
-    from app.game.room import RoomError
+    from app.models.game.room import RoomError
     env, factory, pid, rid, sid = setup
     manager = HistoryAdminService(factory)
     with factory() as db:
@@ -219,7 +219,7 @@ def test_hidden_pack_cannot_start_new_round_and_active_pack_cannot_be_deleted(se
 
 def test_migration_recovers_only_exact_snapshot(setup):
     import json
-    from app.database.models import RoomRecord
+    from app.models.database.models import RoomRecord
     env, factory, pid, rid, sid = setup
     with factory.begin() as db:
         match = db.get(MatchRound, rid)

@@ -1,4 +1,4 @@
-from app.bot.emoji import strip_decor
+from app.views.telegram.emoji import strip_decor
 from tests.pack_fixtures import DEFAULT_PACKS
 import asyncio
 import itertools
@@ -13,26 +13,27 @@ from aiogram.methods import (
     DeleteMessage,
     EditMessageText,
     GetMe,
+    GetUserProfilePhotos,
     SendDocument,
     SendMessage,
 )
-from aiogram.types import Chat, Message, User
+from aiogram.types import Chat, Message, User, UserProfilePhotos
 
-from app.bot.errors import register_error_handlers
-from app.bot.handlers import history, local, menu, online, packs, settings, stats
-from app.bot.middlewares.track import TrackScreensMiddleware
-from app.bot.middlewares.private import PrivateCallbacksMiddleware
-from app.bot.runtime import OnlineRuntime
-from app.bot.tracker import ScreenTracker
+from app.controllers.telegram.errors import register_error_handlers
+from app.controllers.telegram.handlers import history, local, menu, online, packs, settings, stats
+from app.controllers.telegram.middlewares.track import TrackScreensMiddleware
+from app.controllers.telegram.middlewares.private import PrivateCallbacksMiddleware
+from app.controllers.telegram.runtime import OnlineRuntime
+from app.views.telegram.tracker import ScreenTracker
 from app.core.config import Settings
-from app.database.pack_repository import PackRepository
-from app.database.repository import LocalGameRepository
-from app.database.session import make_session_factory
-from app.services.history_service import HistoryService
-from app.services.pack_service import PackService
-from app.services.settings_service import SettingsService
-from app.services.room_service import RoomService
-from app.services.stats_service import StatsService
+from app.models.database.pack_repository import PackRepository
+from app.models.database.repository import LocalGameRepository
+from app.models.database.session import make_session_factory
+from app.models.services.history_service import HistoryService
+from app.models.services.pack_service import PackService
+from app.models.services.settings_service import SettingsService
+from app.models.services.room_service import RoomService
+from app.models.services.stats_service import StatsService
 
 
 class FakeSession(BaseSession):
@@ -66,6 +67,8 @@ class FakeSession(BaseSession):
             )
         if isinstance(method, GetMe):
             return User(id=1, is_bot=True, first_name="bot", username="testbot")
+        if isinstance(method, GetUserProfilePhotos):
+            return UserProfilePhotos(total_count=0, photos=[])
         return True
 
     def of(self, kind):
@@ -160,7 +163,7 @@ def run(coro):
 
 def test_start_sends_reply_keyboard_with_admin_row_only_for_admin(env):
     async def scenario():
-        await env.text(1, "/start", username="ExampleAdmin")
+        await env.text(1, "/start", username="WAWGAME")
         await env.text(2, "/start", username="someone")
 
     run(scenario())
@@ -247,7 +250,7 @@ def test_moderation_buttons_admin_only(env):
     async def scenario():
         await env.press(2, "pk:mod:0", username="someone")
         await env.text(2, "Админ", username="someone")
-        await env.text(1, "Админ", username="ExampleAdmin")
+        await env.text(1, "Админ", username="WAWGAME")
 
     run(scenario())
     texts = [a.text for a in env.alerts()]
@@ -255,6 +258,47 @@ def test_moderation_buttons_admin_only(env):
     sends = env.session.of(SendMessage)
     assert not any(c.chat_id == 2 for c in sends)
     assert any(c.chat_id == 1 and c.text.startswith("Администрирование") for c in sends)
+
+
+def test_online_custom_room_counts_through_telegram_panel(env, monkeypatch):
+    monkeypatch.setattr(env.runtime, "allow_chat_message", lambda *args: True)
+    async def scenario():
+        await env.press(1, "online:create", message_id=700)
+        room_id = env.service.room_id_of(1)
+        panel = env.service.panel_id_of(1)
+        await env.press(1, "rm:ui:settings", message_id=panel)
+        await env.press(1, "rm:custom:max", message_id=panel)
+        assert "Отправьте число игроков" in env.last_text()
+        await env.text(1, "5")
+        assert env.service.get(room_id).settings["max_players"] == 5
+        await env.press(1, "rm:custom:rounds", message_id=panel)
+        assert "Отправьте число раундов" in env.last_text()
+        await env.text(1, "19")
+        room = env.service.get(room_id)
+        assert room.settings["rounds"] == 19 and not room.custom_rule
+        await env.runtime.close()
+
+    run(scenario())
+
+
+def test_online_telegram_word_command_filters_the_guess_keyboard(env):
+    async def scenario():
+        await env.press(1, "online:test:1", username="WAWGAME", message_id=700)
+        room_id = env.service.room_id_of(1)
+        panel = env.service.panel_id_of(1)
+        env.service.act(1, "cy:role")
+        env.service.act(1, "th:animals")
+        env.service.act(1, "start")
+        env.service.act(1, "role")
+        await env.press(1, "rm:gu", message_id=panel)
+        await env.text(1, "/word ЕЖ")
+        room = env.service.get(room_id)
+        assert room.guess_ui["1"]["query"] == "ЕЖ"
+        buttons = [label for row in room.view_for(1).rows for label, cmd in row if cmd.startswith("gp:")]
+        assert buttons == ["ёж"]
+        await env.runtime.close()
+
+    run(scenario())
 
 
 def test_online_room_flow_with_deeplink_and_panels(env):
@@ -297,7 +341,7 @@ def test_join_by_code_flow(env):
 def test_test_lobby_only_for_admin(env):
     async def scenario():
         await env.press(2, "online:test:1", username="someone")
-        await env.press(1, "online:test:2", username="ExampleAdmin")
+        await env.press(1, "online:test:2", username="WAWGAME")
 
     run(scenario())
     assert env.service.room_id_of(2) is None
